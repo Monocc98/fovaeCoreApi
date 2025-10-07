@@ -5,6 +5,8 @@ import { CompanyRoutes } from './companies/routes';
 import { MembershipRoutes } from './membership/routes';
 import { HomeRoutes } from './home/routes';
 import { AccountsRoutes } from './acounts/routes';
+import { CategoriesRoutes } from './category/routes';
+import { MovementsRoutes } from './movements/routes';
 
 
 
@@ -23,8 +25,8 @@ export class AppRoutes {
     router.use('/api/membership', MembershipRoutes.routes );
     router.use('/api/home', HomeRoutes.routes);
     router.use('/api/accounts', AccountsRoutes.routes);
-
-
+    router.use('/api/categories', CategoriesRoutes.routes);
+    router.use('/api/movements', MovementsRoutes.routes);
 
     return router;
   }

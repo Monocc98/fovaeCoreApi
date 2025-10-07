@@ -1,19 +1,32 @@
 import mongoose from "mongoose";
 
-const companySchema = new mongoose.Schema({
+const categorySchema = new mongoose.Schema({
   name: {
     type: String,
     required: [ true, 'Name is required' ],
   },
-  group: {
+  company: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Group',
+    ref: 'Company',
     required: true,
+  },
+  scope: {
+    type: String,
+    required: true,
+    enum: ['COMPANY', 'ACCOUNT'],
+  },
+  account: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Account',
+  },
+  type: {
+    type: String,
+    enum: ['INCOME', 'EXPENSE'],
   }
 
 });
 
-companySchema.set('toJSON', {
+categorySchema.set('toJSON', {
   virtuals: true,
   versionKey: false,
   transform: (_doc, ret: Record<string, any>) => {
@@ -24,4 +37,4 @@ companySchema.set('toJSON', {
   },
 })
 
-export const CompanyModel = mongoose.model('Company', companySchema);
+export const CategoryModel = mongoose.model('Category', categorySchema);

@@ -11,3 +11,7 @@ export * from './dtos/company/membership.dto'
 export * from './dtos/group/group.dto'
 
 export * from './dtos/account/account.dto'
+
+export * from './dtos/category/category.dto'
+
+export * from './dtos/movement/movement.dto'

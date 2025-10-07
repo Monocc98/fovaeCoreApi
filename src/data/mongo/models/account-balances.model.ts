@@ -6,13 +6,8 @@ const accountBalancesSchema = new mongoose.Schema({
     ref: "Account",
     required: true,
   },
-  company: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Company',
-    required: true,
-  },
   balance: {
-    type: mongoose.Schema.Types.Decimal128, // perfecto para montos de dinero
+    type: Number,
     required: true,
     default: 0.0,
   },

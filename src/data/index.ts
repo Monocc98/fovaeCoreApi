@@ -5,4 +5,6 @@ export * from './mongo/models/group.model';
 export * from './mongo/models/company.model';
 export * from './mongo/models/membership.model';
 export * from './mongo/models/accounts.model';
-export * from './mongo/models/account-balances';
+export * from './mongo/models/account-balances.model';
+export * from './mongo/models/category.model';
+export * from './mongo/models/movements.model';

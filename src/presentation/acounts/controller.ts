@@ -27,7 +27,11 @@ export class AccountsController {
         if ( error ) return res.status(400).json({ error })
 
         this.accountService.createAccount( createAccountDto! )
-            .then( account => res.status(201).json( account ) )
+            .then( (account) => {
+                this.accountService.createAccountBalances( { _id: account.account.id, balance: 0.00 } )
+                                    .then( account => res.status(201).json( account ) )
+                
+            } )
             .catch( error => this.handleError( error, res ) );
 
     }

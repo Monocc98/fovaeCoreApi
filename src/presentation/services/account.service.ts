@@ -12,6 +12,7 @@ export class AccountService {
 
     async createAccount( createAccountDto: CreateAccountDto ) {
 
+        //TODO Poner una manera de que se puedan repetir nombres fuera de la misma empresa
         const accountExists = await AccountModel.findOne({ name: createAccountDto.name });
         if ( accountExists ) throw CustomError.badRequest( 'Account already exists' );
 
@@ -75,5 +76,6 @@ export class AccountService {
         }
 
     }
+    
 
 }
