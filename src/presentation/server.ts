@@ -31,6 +31,9 @@ export class Server {
     //*CORS
     this.app.use(cors());
 
+    // Healthcheck
+    this.app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
     //* Middlewares
     this.app.use( express.json() ); // raw
     this.app.use( express.urlencoded({ extended: true }) ); // x-www-form-urlencoded
@@ -48,8 +51,9 @@ export class Server {
     });
     
 
-    this.serverListener = this.app.listen(this.port, () => {
-      console.log(`Server running on port ${ this.port }`);
+    // IMPORTANTE: escuchar en 0.0.0.0 para aceptar conexiones externas
+    this.serverListener = this.app.listen(this.port, '0.0.0.0', () => {
+      console.log(`API escuchando en http://0.0.0.0:${this.port}`);
     });
 
   }
