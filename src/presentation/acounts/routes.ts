@@ -17,12 +17,12 @@ export class AccountsRoutes {
     
     // Definir las rutas
     router.get('/', controller.getAccounts);
-    router.get('/idCompany', controller.getAccountsByIdCompany);
+    router.get('/:idCompany', controller.getAccountsByIdCompany);
     
     //[ AuthMiddleware.validateJWT ]
     router.post('/', controller.createAccount);
-    router.put('/idAccount', controller.updateAccount);
-    router.delete('/idAccount', controller.deleteAccount);
+    router.put('/:idCompany', controller.updateAccount);
+    router.delete(':/idCompany', controller.deleteAccount);
 
     return router;
   }
