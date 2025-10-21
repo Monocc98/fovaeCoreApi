@@ -1,5 +1,5 @@
 import { Response, Request } from "express";
-import { CreateAccountDto, CustomError } from "../../domain";
+import { CreateAccountDto, CustomError, UpdateAccountDto } from "../../domain";
 import { AccountService } from "../services/account.service";
 
 
@@ -42,5 +42,39 @@ export class AccountsController {
             .then ( account => res.json( account ))
             .catch( error => this.handleError( error, res ) );
         
+    }
+
+    getAccountsByIdCompany = async(req: Request, res: Response) => {
+
+        const idCompany = req.params.idCompany;
+        
+        this.accountService.getAccountsByIdCompany(idCompany)
+            .then ( accounts => res.json( accounts ))
+            .catch( error => this.handleError( error, res ) );
+        
+    }
+
+    updateAccount = async(req: Request, res: Response) => {
+    
+        const idAccount = req.params.idAccount;
+
+        const [ error, updateAccount ] = UpdateAccountDto.update(req.body);
+        if ( error ) return res.status(400).json({ error })
+
+        this.accountService.updateAccount( idAccount, updateAccount! )
+            .then( account => res.status(201).json( account ) )
+            .catch( error => this.handleError( error, res ) );
+
+    }
+    
+    deleteAccount = async(req: Request, res: Response) => {
+
+        const idAccount = req.params.idAccount;
+
+
+        this.accountService.deleteAccount( idAccount )
+            .then( account => res.status(201).json( account ) )
+            .catch( error => this.handleError( error, res ) );
+
     }
 }

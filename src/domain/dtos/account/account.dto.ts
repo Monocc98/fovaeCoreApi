@@ -22,3 +22,23 @@ export class CreateAccountDto {
 
     }
 }
+
+export class UpdateAccountDto {
+
+    private constructor(
+        public readonly name : string,
+        public readonly type : number,
+    ) {}
+
+    static update( object: { [key: string]: any } ): [string?, UpdateAccountDto?] {
+
+        const { name, type } = object;
+        
+        if (!name) return ['Missing occurredAt'];
+        if (!type) return ['Missing occurredAt'];
+
+        return [undefined,  new UpdateAccountDto( name, type )]
+
+    }
+
+}
