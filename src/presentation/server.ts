@@ -52,8 +52,8 @@ export class Server {
     
 
     // IMPORTANTE: escuchar en 0.0.0.0 para aceptar conexiones externas
-    this.serverListener = this.app.listen(this.port, '0.0.0.0', () => {
-      console.log(`API escuchando en http://0.0.0.0:${this.port}`);
+    this.serverListener = this.app.listen(this.port, '127.0.0.1', () => {
+      console.log(`API escuchando en http://127.0.0.1:${this.port}`);
     });
 
   }

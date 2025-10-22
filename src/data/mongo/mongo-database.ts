@@ -15,7 +15,10 @@ export class MongoDatabase {
 
         try {
             await mongoose.connect(mongoUrl, {
-                dbName
+                dbName,
+                serverSelectionTimeoutMS: 5000,
+                socketTimeoutMS: 20000,
+                family: 4, // fuerza IPv4 por si acaso
             });
             console.log('MongoDB Connected');
             

@@ -30,5 +30,10 @@ export class CustomError extends Error {
         console.log(message);
         return new CustomError(500, message);
     }
+    
+    static badGateway( message: string ) {
+        console.log(message);
+        return new CustomError(502, message);
+    }
 
 }
