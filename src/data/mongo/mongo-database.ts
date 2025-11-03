@@ -14,6 +14,27 @@ export class MongoDatabase {
         const { mongoUrl, dbName } = options;
 
         try {
+            // 🔹 Plugin global para transformar _id → id y quitar __v
+            mongoose.plugin((schema) => {
+                schema.set("toJSON", {
+                    virtuals: true,
+                    versionKey: false,
+                    transform: (_, ret) => {
+                        ret.id = ret._id;
+                        delete ret._id;
+                    },
+                });
+
+                schema.set("toObject", {
+                    virtuals: true,
+                    versionKey: false,
+                    transform: (_, ret) => {
+                        ret.id = ret._id;
+                        delete ret._id;
+                    },
+                });
+            });
+            
             await mongoose.connect(mongoUrl, {
                 dbName,
                 serverSelectionTimeoutMS: 5000,

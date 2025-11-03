@@ -8,6 +8,7 @@ import { AccountsRoutes } from './acounts/routes';
 import { CategoriesRoutes } from './category/routes';
 import { MovementsRoutes } from './movements/routes';
 import { BudgetRoutes } from './budget/routes';
+import { FiscalYearRoutes } from './fiscalYear/routes';
 
 
 
@@ -29,6 +30,7 @@ export class AppRoutes {
     router.use('/api/categories', CategoriesRoutes.routes);
     router.use('/api/movements', MovementsRoutes.routes);
     router.use('/api/budgets', BudgetRoutes.routes);
+    router.use('/api/fiscalYear', FiscalYearRoutes.routes);
 
     return router;
   }
