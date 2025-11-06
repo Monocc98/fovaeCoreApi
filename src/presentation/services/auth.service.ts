@@ -58,4 +58,16 @@ export class AuthService {
         }
     }
 
+    public async renewToken(userId: string) {
+        const user = await UserModel.findById(userId);
+        if (!user) throw CustomError.unauthorized('User not found');
+
+        const { password, ...userEntity } = UserEntity.fromObject(user);
+        const token = await JwtAdapter.generateToken({ id: user.id }); // agrega expiresIn si quieres
+
+        if (!token) throw CustomError.internalServer('Error while creating JWT');
+
+        return { user: userEntity, token };
+    }
+
 }
