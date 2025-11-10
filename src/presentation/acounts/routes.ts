@@ -22,7 +22,7 @@ export class AccountsRoutes {
     //[ AuthMiddleware.validateJWT ]
     router.post('/', controller.createAccount);
     router.put('/:idAccount', controller.updateAccount);
-    router.delete(':/idAccount', controller.deleteAccount);
+    router.delete('/:idAccount', controller.deleteAccount);
 
     return router;
   }
