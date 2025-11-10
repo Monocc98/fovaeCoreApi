@@ -21,8 +21,8 @@ export class AccountsRoutes {
     
     //[ AuthMiddleware.validateJWT ]
     router.post('/', controller.createAccount);
-    router.put('/:idCompany', controller.updateAccount);
-    router.delete(':/idCompany', controller.deleteAccount);
+    router.put('/:idAccount', controller.updateAccount);
+    router.delete(':/idAccount', controller.deleteAccount);
 
     return router;
   }
