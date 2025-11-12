@@ -38,7 +38,7 @@ export class FiscalYear_CompanyService {
 
             const fiscalYear_Companys = await FiscalYear_CompanyModel.find()
                 .populate('company')
-                .populate('user', 'id name email')
+                .populate('fiscalYear')
 
             return {
                 fiscalYear_Companys

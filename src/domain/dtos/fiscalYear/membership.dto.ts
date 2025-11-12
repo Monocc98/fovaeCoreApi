@@ -13,14 +13,14 @@ export class CreateFiscalYear_CompanyDto {
 
     static create( object: { [key: string]: any } ): [string?, CreateFiscalYear_CompanyDto?] {
 
-        const { company, fiscalYear } = object;
+        const { fiscalYear, company } = object;
         
-        if ( !company ) return ['Missing Company'];
         if ( !fiscalYear ) return ['Missing FiscalYear'];
-        if ( !Validators.isMongoID(company) ) return ['Invalid Company ID'];
+        if ( !company ) return ['Missing Company'];
         if ( !Validators.isMongoID(fiscalYear) ) return ['Invalid FiscalYear ID'];
+        if ( !Validators.isMongoID(company) ) return ['Invalid Company ID'];
         
-        return [undefined,  new CreateFiscalYear_CompanyDto( company, fiscalYear )]
+        return [undefined,  new CreateFiscalYear_CompanyDto( fiscalYear, company )]
 
     }
 }
