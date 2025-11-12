@@ -59,7 +59,7 @@ export class FiscalYear_CompanyService {
             if(!Validators.isMongoID(idCompany)) throw CustomError.badRequest('Invalid company ID');
             const accountIdMongo = Validators.convertToUid(idCompany);
 
-            const fiscalYears_Companies = await FiscalYear_CompanyModel.findById(accountIdMongo)
+            const fiscalYears_Companies = await FiscalYear_CompanyModel.find({ company: accountIdMongo })
                 .populate('company')
                 .populate('fiscalYear')
 
