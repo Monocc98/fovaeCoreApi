@@ -43,7 +43,9 @@ export class FiscalYear_CompanyController {
 
     getFiscalYears_CompaniesByCompanyId = async(req: Request, res: Response) => {
 
-        this.fiscalYear_CompanyService.getFiscalYears_Companies()
+        const idCompany = req.params.idCompany;
+
+        this.fiscalYear_CompanyService.getFiscalYears_CompaniesByCompanyId(idCompany)
             .then ( fiscalYear_Company => res.json( fiscalYear_Company ))
             .catch( error => this.handleError( error, res ) );
         

@@ -19,6 +19,8 @@ export class FiscalYear_CompanyRoutes {
     router.get('/', controller.getFiscalYears_Companies);
     router.post('/', controller.createFiscalYear_Company); //[ AuthMiddleware.validateJWT ]
 
+    router.get('/:idCompany', controller.getFiscalYears_CompaniesByCompanyId); //[ AuthMiddleware.validateJWT ]
+
 
 
     return router;
