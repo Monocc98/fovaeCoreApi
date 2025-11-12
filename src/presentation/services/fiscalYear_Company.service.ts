@@ -11,7 +11,7 @@ export class FiscalYear_CompanyService {
 
     async createFiscalYear_Company( createFiscalYear_CompanyDto: CreateFiscalYear_CompanyDto ) {
 
-        const fiscalYear_CompanyExists = await FiscalYear_CompanyModel.findOne({ user: createFiscalYear_CompanyDto.user, company: createFiscalYear_CompanyDto.company });
+        const fiscalYear_CompanyExists = await FiscalYear_CompanyModel.findOne({ fiscalYear: createFiscalYear_CompanyDto.fiscalYear, company: createFiscalYear_CompanyDto.company });
         if ( fiscalYear_CompanyExists ) throw CustomError.badRequest( 'FiscalYear_Company already exists' );
 
         try {
