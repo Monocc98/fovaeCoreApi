@@ -6,11 +6,6 @@ const fiscalYearSchema = new mongoose.Schema({
       required: true,
       unique: true,
     },
-    company: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Company',
-      required: true,
-    },
     startDate: {
         type: Date,
         required: true,

@@ -163,7 +163,7 @@ export class MovementService {
             if(!Validators.isMongoID(idMovement)) throw CustomError.badRequest('Invalid account ID');
             const accountIdMongo = Validators.convertToUid(idMovement);
 
-            const movement = await MovementModel.findById(idMovement)
+            const movement = await MovementModel.findById(accountIdMongo)
                 .populate({
                     path: 'subsubcategory',
                     select: 'name scope parent company',

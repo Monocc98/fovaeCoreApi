@@ -17,7 +17,6 @@ export class FiscalYearRoutes {
     
     // Definir las rutas
     router.get('/', controller.getFiscalYears);
-    router.get('/company/:idCompany', controller.getFiscalYearsByCompanyId);
     router.get('/:idFiscalYear', controller.getFiscalYearById);
 
     // router.put('/:idFiscalYear', controller.updateFiscalYear);

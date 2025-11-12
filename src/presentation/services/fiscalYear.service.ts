@@ -94,35 +94,6 @@ export class FiscalYearService {
 
     }
 
-    async getFiscalYearsByCompanyId( idCompany: string ) {
-
-        try {
-
-            if(!Validators.isMongoID(idCompany)) throw CustomError.badRequest('Invalid company ID');
-            const accountIdMongo = Validators.convertToUid(idCompany);
-
-            // const [fiscalYears, balanceDoc] = await Promise.all([
-            //     FiscalYearModel.find({ account: accountIdMongo }).populate('category'),
-            //     AccountBalancesModel.findById(accountIdMongo)
-            // ]);
-
-            // const balance = balanceDoc?.balance ?? 0;
-
-            const fiscalYears = await FiscalYearModel.find({ company: accountIdMongo })
-                .populate('company')
-
-            return {
-                fiscalYears,
-            };
-            
-        } catch (error) {
-            console.log(error);
-            
-            throw CustomError.internalServer('Internal Server Error');
-        }
-
-    }
-
     async getFiscalYearsById( idFiscalYear: string ) {
 
         try {
