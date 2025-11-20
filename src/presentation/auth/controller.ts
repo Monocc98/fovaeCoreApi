@@ -47,8 +47,10 @@ export class AuthController {
 
     renewToken = ( req: Request, res: Response ) => {
 
-        const user = req.body.user; // lo puso el AuthMiddleware
-        if (!user) return res.status(401).json({ error: 'Unauthorized' });
+        const user = (req as any).user;
+        if (!user?.id) {
+            return res.status(401).json({ error: 'User not authenticated' });
+        }
 
         this.authService.renewToken(user.id)
             .then(payload => res.json(payload)) // { user, token }
