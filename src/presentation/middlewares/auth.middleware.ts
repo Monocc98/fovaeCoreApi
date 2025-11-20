@@ -23,9 +23,8 @@ export class AuthMiddleware {
             const user = await UserModel.findById( payload.id );
             if ( !user ) return res.status(401).json({ error: 'Invalid token - user'});
 
-            // todo: validar si el usuario esta áctivo
-
-            req.body.user = UserEntity.fromObject(user);
+            // Guardamos el usuario en una propiedad del request
+            (req as any).user = UserEntity.fromObject(user);
 
             next();
 

@@ -23,8 +23,13 @@ export class HomeController {
 
     getHomeOverview = async(req: Request, res: Response) => {
 
-        const mockId = '68aca3ced36be4df237ce459';
-        await this.homeService.getHomeOverview(mockId)
+        
+        const user = (req as any).user;
+        if (!user?.id) {
+            return res.status(401).json({ error: 'User not authenticated' });
+        }
+
+        await this.homeService.getHomeOverview(user.id)
             .then ( overview => res.json( overview ))
             .catch( error => this.handleError( error, res ) );
         

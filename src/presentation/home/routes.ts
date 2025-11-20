@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { HomeService } from "../services/home.service";
 import { HomeController } from "./controller";
+import { AuthMiddleware } from "../middlewares/auth.middleware";
 
 export class HomeRoutes {
 
@@ -12,7 +13,7 @@ export class HomeRoutes {
     const controller = new HomeController( homeService );
     
     // Definir las rutas
-    router.get('/', controller.getHomeOverview);
+    router.get('/', [ AuthMiddleware.validateJWT ], controller.getHomeOverview);
     // router.post('/', [ AuthMiddleware.validateJWT ], controller.createGroup);
 
 
