@@ -17,7 +17,7 @@ export class MembershipRoutes {
     
     // Definir las rutas
     router.get('/', controller.getmemberships);
-    router.post('/', [ AuthMiddleware.validateJWT ], controller.createMembership);
+    router.post('/', controller.createMembership); //[ AuthMiddleware.validateJWT ], 
 
 
 

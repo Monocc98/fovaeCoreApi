@@ -15,14 +15,14 @@ export class CreateMembershipDto {
 
     static create( object: { [key: string]: any } ): [string?, CreateMembershipDto?] {
 
-        const { userId, company, roles, status } = object;
+        const { user, company, roles, status } = object;
         
-        if ( !userId ) return ['Missing User'];
+        if ( !user ) return ['Missing User'];
         if ( !company ) return ['Missing Company'];
-        if ( !Validators.isMongoID(userId) ) return ['Invalid User ID'];
+        if ( !Validators.isMongoID(user) ) return ['Invalid User ID'];
         if ( !Validators.isMongoID(company) ) return ['Invalid Company ID'];
         
-        return [undefined,  new CreateMembershipDto( userId, company, roles, status )]
+        return [undefined,  new CreateMembershipDto( user, company, roles, status )]
 
     }
 }
