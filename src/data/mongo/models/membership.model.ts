@@ -11,10 +11,10 @@ const membershipSchema = new mongoose.Schema({
     ref: 'Company',
     required: [ true, 'companyId is required' ],
   },
-  roles: {
-    type: [ String ],
-    enum: ['ADMIN_ROLE', 'USER_ROLE', 'MANAGER_ROLE', 'VIEWER_ROLE'],
-    default: ['USER_ROLE'],
+  role: {
+    type: String,
+    default: 'VIEWER',
+    enum: ['VIEWER', 'ADMIN'],
   },
   status: {
     type: String,

@@ -19,9 +19,9 @@ const userSchema = new mongoose.Schema({
         type: String,
     },
     role: {
-        type:[ String ],
-        default: 'USER_ROLE',
-        enum: ['ADMIN_ROLE', 'USER_ROLE'],
+        type: String,
+        default: 'STANDARD',
+        enum: ['STANDARD', 'SUPER_ADMIN'],
     }
   // agrega createdAt y updatedAt automáticos
 });
