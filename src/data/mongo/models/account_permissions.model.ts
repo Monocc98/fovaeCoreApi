@@ -34,4 +34,4 @@ accountPermissionsSchema.set('toJSON', {
 
 
 
-export const AccountPermissionsModel = mongoose.model('Membership', accountPermissionsSchema);
+export const AccountPermissionsModel = mongoose.model('AccountPermissions', accountPermissionsSchema);
