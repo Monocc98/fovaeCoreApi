@@ -11,19 +11,19 @@ export class AccountPermissionsService {
 
     async createAccountPermissions( createAccountPermissionsDto: CreateAccountPermissionsDto ) {
 
-        const membershipExists = await AccountPermissionsModel.findOne({ membership: createAccountPermissionsDto.membership, account: createAccountPermissionsDto.account, canView: createAccountPermissionsDto.canView, canEdit: createAccountPermissionsDto.canEdit });
-        if ( membershipExists ) throw CustomError.badRequest( 'Membership already exists' );
+        const accountPermissionsExists = await AccountPermissionsModel.findOne({ membership: createAccountPermissionsDto.membership, account: createAccountPermissionsDto.account});
+        if ( accountPermissionsExists ) throw CustomError.badRequest( 'accountPermissions already exists' );
 
         try {
 
-            const membership = new AccountPermissionsModel({
+            const accountPermissions = new AccountPermissionsModel({
                 ...createAccountPermissionsDto,
             });
 
-            await membership.save();
+            await accountPermissions.save();
 
             return {
-                membership
+                accountPermissions
             };
             
         } catch (error) {
@@ -36,12 +36,12 @@ export class AccountPermissionsService {
 
         try {
 
-            const memberships = await AccountPermissionsModel.find()
-                .populate('membership')
+            const accountPermissions = await AccountPermissionsModel.find()
+                .populate('accountPermissions')
                 .populate('accounts', 'id name')
 
             return {
-                memberships
+                accountPermissions
             };
             
         } catch (error) {
