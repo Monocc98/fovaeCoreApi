@@ -9,20 +9,20 @@ export class CreateMembershipDto {
     private constructor(
         public readonly user: string,
         public readonly company: string,
-        public readonly roles: string,
+        public readonly role: string,
         public readonly status: string,
     ) {}
 
     static create( object: { [key: string]: any } ): [string?, CreateMembershipDto?] {
 
-        const { user, company, roles, status } = object;
+        const { user, company, role, status } = object;
         
         if ( !user ) return ['Missing User'];
         if ( !company ) return ['Missing Company'];
         if ( !Validators.isMongoID(user) ) return ['Invalid User ID'];
         if ( !Validators.isMongoID(company) ) return ['Invalid Company ID'];
         
-        return [undefined,  new CreateMembershipDto( user, company, roles, status )]
+        return [undefined,  new CreateMembershipDto( user, company, role, status )]
 
     }
 }
