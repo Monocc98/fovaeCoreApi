@@ -1,22 +1,17 @@
 // src/presentation/services/permissions.service.ts
 import { MembershipModel } from "../../data";
 import { AccountPermissionsModel } from "../../data/mongo/models/account_permissions.model";
-import { AccountModel } from "../../data"; // ajusta si tu AccountModel está en otra ruta
+// ajusta el import de AccountModel según como lo tengas
+import { AccountModel } from "../../data"; 
 
 type GlobalRole = "SUPER_ADMIN" | "STANDARD";
 type BaseRole = "ADMIN" | "VIEWER";
 
-interface MinimalUserForPermissions {
-  id: string;
-  role: string; // 'STANDARD' | 'SUPER_ADMIN'
-}
-
-export const buildPermissionsForUser = async (user: MinimalUserForPermissions) => {
+export const buildPermissionsForUser = async (user: { id: string; role: string }) => {
   // 1) Rol global
-  const globalRole: GlobalRole =
-    user.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "STANDARD";
+  const globalRole: GlobalRole = user.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "STANDARD";
 
-  // SUPER_ADMIN → el front interpretará esto como "todo permitido"
+  // Si es SUPER_ADMIN, no necesitamos más detalle: en el front trataremos esto como "todo permitido"
   if (globalRole === "SUPER_ADMIN") {
     return {
       globalRole,
@@ -24,23 +19,22 @@ export const buildPermissionsForUser = async (user: MinimalUserForPermissions) =
     };
   }
 
-  // 2) Memberships del usuario
+  // 2) Memberships del usuario (empresas a las que tiene acceso)
   const memberships = await MembershipModel.find({
     user: user.id,
     status: "active",
   }).lean();
 
-  // 3) Para cada membership, calcular permisos por empresa + cuentas
+  // 3) Para cada membership, construir permisos por empresa + cuentas
   const companyPermissions = await Promise.all(
     memberships.map(async (m) => {
       const companyId = m.company.toString();
       const baseRole: BaseRole = (m.role as BaseRole) || "VIEWER"; // m.role es 'ADMIN' | 'VIEWER'
 
-      // ❗ Aquí quitamos Promise.all para evitar TS2590
-      const accounts = await AccountModel.find({ company: m.company }).lean();
-      const accountPerms = await AccountPermissionsModel.find({
-        membership: m._id,
-      }).lean();
+      // Todas las cuentas de esa empresa
+      const accounts = await AccountModel.find({ company: m.company }).lean().exec();
+      const accountPerms = await AccountPermissionsModel.find({ membership: m._id }).lean().exec();
+
 
       const accountsPerm = accounts.map((acc) => {
         const accountId = acc._id.toString();
@@ -49,11 +43,11 @@ export const buildPermissionsForUser = async (user: MinimalUserForPermissions) =
           (ap) => ap.account.toString() === accountId
         );
 
-        // Permisos base según el role de membership
-        let canView = true; // ADMIN y VIEWER pueden ver
+        // Permisos base por empresa
+        let canView = true; // tanto ADMIN como VIEWER pueden ver
         let canEdit = baseRole === "ADMIN";
 
-        // Override a nivel cuenta, si existe
+        // Si hay override a nivel cuenta, manda el override
         if (override) {
           canView = override.canView;
           canEdit = override.canEdit;
