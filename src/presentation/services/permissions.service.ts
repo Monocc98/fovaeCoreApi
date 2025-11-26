@@ -7,6 +7,12 @@ import { AccountModel } from "../../data";
 type GlobalRole = "SUPER_ADMIN" | "STANDARD";
 type BaseRole = "ADMIN" | "VIEWER";
 
+type AccountPermLean = {
+  account: any;          // o mongoose.Types.ObjectId si quieres
+  canView: boolean;
+  canEdit: boolean;
+};
+
 export const buildPermissionsForUser = async (user: { id: string; role: string }) => {
   // 1) Rol global
   const globalRole: GlobalRole = user.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "STANDARD";
@@ -33,8 +39,9 @@ export const buildPermissionsForUser = async (user: { id: string; role: string }
 
       // Todas las cuentas de esa empresa
       const accounts = await AccountModel.find({ company: m.company }).lean().exec();
-      const accountPerms = await AccountPermissionsModel.find({ membership: m._id }).lean().exec();
-
+      const accountPerms = (await AccountPermissionsModel.find({
+        membership: m._id,
+      }).lean().exec()) as AccountPermLean[];
 
       const accountsPerm = accounts.map((acc) => {
         const accountId = acc._id.toString();
