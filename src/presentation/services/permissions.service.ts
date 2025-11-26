@@ -6,16 +6,12 @@ import { AccountModel } from "../../data";
 type GlobalRole = "SUPER_ADMIN" | "STANDARD";
 type BaseRole = "ADMIN" | "VIEWER";
 
-type AccountPermLean = {
-  account: any;
-  canView: boolean;
-  canEdit: boolean;
-};
-
 export const buildPermissionsForUser = async (user: { id: string; role: string }) => {
+  // 1) Rol global basado en el campo role del usuario
   const globalRole: GlobalRole =
     user.role === "SUPER_ADMIN" ? "SUPER_ADMIN" : "STANDARD";
 
+  // Si es SUPER_ADMIN, el front lo puede interpretar como "todo permitido"
   if (globalRole === "SUPER_ADMIN") {
     return {
       globalRole,
@@ -23,55 +19,77 @@ export const buildPermissionsForUser = async (user: { id: string; role: string }
     };
   }
 
-  const memberships = await MembershipModel.find({
+  // 2) Memberships del usuario (empresas donde tiene acceso)
+  const memberships = (await MembershipModel.find({
     user: user.id,
     status: "active",
-  }).lean();
+  }).lean().exec()) as any[];
 
-  const companyPermissions = await Promise.all(
-    memberships.map(async (m) => {
-      const companyId = m.company.toString();
-      const baseRole: BaseRole = (m.role as BaseRole) || "VIEWER";
+  const companyPermissions: {
+    companyId: string;
+    baseRole: BaseRole;
+    accounts: { accountId: string; canView: boolean; canEdit: boolean }[];
+  }[] = [];
 
-      const accounts = await AccountModel.find({ company: m.company }).lean().exec();
+  // 3) Recorremos memberships uno por uno (sin Promise.all, sin map)
+  for (const m of memberships) {
+    const companyId = m.company.toString();
+    const baseRole: BaseRole = m.role === "ADMIN" ? "ADMIN" : "VIEWER";
 
-      const accountPerms = (await AccountPermissionsModel.find({
-        membership: m._id,
-      }).lean().exec()) as AccountPermLean[];
+    // 3.1) Cuentas de la empresa
+    const accounts = (await AccountModel.find({
+      company: m.company,
+    }).lean().exec()) as any[];
 
-      // 🔽 AQUÍ EL CAMBIO: sin map, sin inferencia genérica rara
-      const accountsPerm: { accountId: string; canView: boolean; canEdit: boolean }[] = [];
+    // 3.2) Overrides de permisos por cuenta para este membership
+    const accountPerms = (await AccountPermissionsModel.find({
+      membership: m._id,
+    }).lean().exec()) as any[];
 
-      for (const acc of accounts as any[]) {
-        const accountId = acc._id.toString();
+    const accountsPerm: { accountId: string; canView: boolean; canEdit: boolean }[] = [];
 
-        const override = (accountPerms as any[]).find(
-          (ap) => ap.account.toString() === accountId
-        );
+    // 3.3) Por cada cuenta, calculamos permisos efectivos
+    for (const acc of accounts) {
+      const accountId = acc._id.toString();
 
-        let canView = true;
-        let canEdit = baseRole === "ADMIN";
-
-        if (override) {
-          canView = override.canView;
-          canEdit = override.canEdit;
+      // Buscamos override sin usar .find genérico
+      let override: any = null;
+      for (const ap of accountPerms) {
+        if (ap.account.toString() === accountId) {
+          override = ap;
+          break;
         }
-
-        accountsPerm.push({
-          accountId,
-          canView,
-          canEdit,
-        });
       }
 
-      return {
-        companyId,
-        baseRole,
-        accounts: accountsPerm,
-      };
-    })
-  );
+      // Permisos base según role en membership
+      let canView = true; // ADMIN y VIEWER pueden ver
+      let canEdit = baseRole === "ADMIN";
 
+      // Si hay override, lo aplicamos
+      if (override) {
+        if (typeof override.canView === "boolean") {
+          canView = override.canView;
+        }
+        if (typeof override.canEdit === "boolean") {
+          canEdit = override.canEdit;
+        }
+      }
+
+      accountsPerm.push({
+        accountId,
+        canView,
+        canEdit,
+      });
+    }
+
+    companyPermissions.push({
+      companyId,
+      baseRole,
+      accounts: accountsPerm,
+    });
+  }
+
+  // 4) Resultado final
   return {
     globalRole,
     companyPermissions,
