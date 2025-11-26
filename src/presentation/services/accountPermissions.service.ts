@@ -37,8 +37,8 @@ export class AccountPermissionsService {
         try {
 
             const accountPermissions = await AccountPermissionsModel.find()
-                .populate('accountPermissions')
-                .populate('accounts', 'id name')
+                .populate('membership') // si quieres ver el membership
+                .populate('account', 'id name'); // si quieres ver info de la cuenta
 
             return {
                 accountPermissions

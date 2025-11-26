@@ -1,6 +1,7 @@
 import { bcryptAdapter, envs, JwtAdapter } from "../../config";
 import { UserModel } from "../../data";
 import { CustomError, LoginUserDto, RegisterUserDto, UserEntity } from "../../domain";
+import { buildPermissionsForUser } from "./permissions.service";
 
 
 
@@ -52,9 +53,12 @@ export class AuthService {
         const token = await JwtAdapter.generateToken({ id: user.id });
         if ( !token ) throw CustomError.internalServer('Error while creating JWT');
 
+        const permissions = await buildPermissionsForUser(userEntity);
+
         return {
             user: userEntity,
-            token: token
+            token: token,
+            permissions: permissions,
         }
     }
 
@@ -67,7 +71,9 @@ export class AuthService {
 
         if (!token) throw CustomError.internalServer('Error while creating JWT');
 
-        return { user: userEntity, token };
+        const permissions = await buildPermissionsForUser(userEntity);
+
+        return { user: userEntity, token, permissions };
     }
 
 }
