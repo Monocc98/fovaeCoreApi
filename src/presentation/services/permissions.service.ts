@@ -49,38 +49,35 @@ export const buildPermissionsForUser = async (user: { id: string; role: string }
     const accountsPerm: { accountId: string; canView: boolean; canEdit: boolean }[] = [];
 
     // 3.3) Por cada cuenta, calculamos permisos efectivos
-    for (const acc of accounts) {
-      const accountId = acc._id.toString();
+    for (const acc of accounts as any[]) {
+  const accountId = acc._id.toString();
 
-      // Buscamos override sin usar .find genérico
-      let override: any = null;
-      for (const ap of accountPerms) {
-        if (ap.account.toString() === accountId) {
-          override = ap;
-          break;
-        }
-      }
-
-      // Permisos base según role en membership
-      let canView = true; // ADMIN y VIEWER pueden ver
-      let canEdit = baseRole === "ADMIN";
-
-      // Si hay override, lo aplicamos
-      if (override) {
-        if (typeof override.canView === "boolean") {
-          canView = override.canView;
-        }
-        if (typeof override.canEdit === "boolean") {
-          canEdit = override.canEdit;
-        }
-      }
-
-      accountsPerm.push({
-        accountId,
-        canView,
-        canEdit,
-      });
+  // Buscar override para esta cuenta en este membership
+  let override: any = null;
+  for (const ap of accountPerms as any[]) {
+    if (ap.account.toString() === accountId) {
+      override = ap;
+      break;
     }
+  }
+
+  // Permisos base según role de membership
+  let canView = true;                 // ADMIN y VIEWER siempre ven
+  let canEdit = baseRole === "ADMIN"; // solo ADMIN edita por defecto
+
+  // 🔥 Si hay override, manda lo que diga la BD SIN condiciones raras
+  if (override) {
+    canView = !!override.canView;
+    canEdit = !!override.canEdit;
+  }
+
+  accountsPerm.push({
+    accountId,
+    canView,
+    canEdit,
+  });
+}
+
 
     companyPermissions.push({
       companyId,
