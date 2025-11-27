@@ -10,6 +10,8 @@ const groupSchema = new mongoose.Schema({
   },
 });
 
+groupSchema.index({ name: 1 }, { unique: true });
+
 groupSchema.set('toJSON', {
   virtuals: true,
   versionKey: false,

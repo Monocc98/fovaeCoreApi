@@ -26,6 +26,8 @@ const subcategorySchema = new mongoose.Schema({
   },
 });
 
+subcategorySchema.index({ company: 1, parent: 1, name: 1 }, { unique: true });
+
 subcategorySchema.set('toJSON', {
   virtuals: true,
   versionKey: false,

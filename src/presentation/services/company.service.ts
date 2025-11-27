@@ -11,10 +11,16 @@ export class CompanyService {
 
     async createCompany( createCompanyDto: CreateCompanyDto ) {
 
-        const companyExists = await CompanyModel.findOne({ name: createCompanyDto.name });
-        if ( companyExists ) throw CustomError.badRequest( 'Company already exists' );
-
         try {
+
+            const companyExists = await CompanyModel.findOne({
+                name: createCompanyDto.name,
+                group: createCompanyDto.group,
+            });
+
+            if (companyExists) {
+                throw CustomError.badRequest('Company already exists in this group');
+            }
 
             const company = new CompanyModel({
                 ...createCompanyDto,

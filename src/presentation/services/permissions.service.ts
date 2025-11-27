@@ -71,21 +71,6 @@ export const buildPermissionsForUser = async (user: { id: string; role: string }
     canEdit = !!override.canEdit;
   }
   
-  console.log("DEBUG PERM", {
-  userId: user.id,
-  membershipId: m._id.toString(),
-  companyId,
-  baseRole,
-  accountId,
-  override: override ? {
-    membership: override.membership?.toString?.(),
-    account: override.account?.toString?.(),
-    canView: override.canView,
-    canEdit: override.canEdit,
-  } : null,
-  canEditFinal: canEdit,
-});
-
   accountsPerm.push({
     accountId,
     canView,

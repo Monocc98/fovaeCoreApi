@@ -15,11 +15,16 @@ export class CategoryService {
 
     async createCategory( createCategoryDto: CreateCategoryDto ) {
 
-        //TODO ? una manera de evitar que se confundan categorias
-        const categoryExists = await CategoryModel.findOne({ name: createCategoryDto.name });
-        if ( categoryExists ) throw CustomError.badRequest( 'Category already exists' );
-
         try {
+
+            const categoryExists = await CategoryModel.findOne({
+                name: createCategoryDto.name,
+                company: createCategoryDto.company,
+            });
+
+            if (categoryExists) {
+                throw CustomError.badRequest('Category already exists for this company');
+            }
 
             const category = new CategoryModel({
                 ...createCategoryDto,
@@ -39,11 +44,18 @@ export class CategoryService {
 
     async createSubcategory( createSubcategoryDto: CreateSubcategoryDto ) {
 
-        //TODO ? una manera de evitar que se confundan categorias
-        const subcategoryExists = await SubcategoryModel.findOne({ name: createSubcategoryDto.name });
-        if ( subcategoryExists ) throw CustomError.badRequest( 'Category already exists' );
-
         try {
+
+            const subcategoryExists = await SubcategoryModel.findOne({
+                name: createSubcategoryDto.name,
+                company: createSubcategoryDto.company,
+                parent: createSubcategoryDto.parent,
+            });
+
+            if (subcategoryExists) {
+                throw CustomError.badRequest('Subcategory already exists in this category');
+            }
+
 
             const subcategory = new SubcategoryModel({
                 ...createSubcategoryDto,
@@ -63,11 +75,17 @@ export class CategoryService {
 
     async createSubsubcategory( createSubsubcategoryDto: CreateSubsubcategoryDto ) {
 
-        //TODO ? una manera de evitar que se confundan categorias
-        const subsubcategoryExists = await SubsubcategoryModel.findOne({ name: createSubsubcategoryDto.name });
-        if ( subsubcategoryExists ) throw CustomError.badRequest( 'Category already exists' );
-
         try {
+            const subsubcategoryExists = await SubsubcategoryModel.findOne({
+                name: createSubsubcategoryDto.name,
+                company: createSubsubcategoryDto.company,
+                parent: createSubsubcategoryDto.parent,
+            });
+
+            if (subsubcategoryExists) {
+                throw CustomError.badRequest('Subsubcategory already exists in this subcategory');
+            }
+
 
             const subsubcategory = new SubsubcategoryModel({
                 ...createSubsubcategoryDto,

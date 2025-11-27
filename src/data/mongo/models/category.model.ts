@@ -26,6 +26,8 @@ const categorySchema = new mongoose.Schema({
 
 });
 
+categorySchema.index({ company: 1, name: 1 }, { unique: true });
+
 categorySchema.set('toJSON', {
   virtuals: true,
   versionKey: false,

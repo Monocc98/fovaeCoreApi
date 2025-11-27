@@ -4,7 +4,6 @@ const accountsSchema = new mongoose.Schema({
   name: {
     type: String,
     required: [ true, 'Name is required' ],
-    unique: true,
   },
   company: {
     type: mongoose.Schema.Types.ObjectId,
@@ -23,6 +22,8 @@ const accountsSchema = new mongoose.Schema({
   },
 
 });
+
+accountsSchema.index({ company: 1, name: 1 }, { unique: true });
 
 accountsSchema.set('toJSON', {
   virtuals: true,

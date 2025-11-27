@@ -13,6 +13,8 @@ const companySchema = new mongoose.Schema({
 
 });
 
+companySchema.index({ group: 1, name: 1 }, { unique: true });
+
 companySchema.set('toJSON', {
   virtuals: true,
   versionKey: false,
