@@ -5,7 +5,6 @@ export class CreateMovementDto {
 
     private constructor(
         public readonly description : string,
-        public readonly comments : string,
         public readonly account : string,
         public readonly occurredAt : Date,
         public readonly amount : number,
@@ -17,13 +16,12 @@ export class CreateMovementDto {
 
     static create( object: { [key: string]: any } ): [string?, CreateMovementDto?] {
 
-        const { description, comments, account, occurredAt, amount, source, subsubcategory, transfererId} = object;
+        const { description, account, occurredAt, amount, source, subsubcategory, transfererId} = object;
         
         if (!account) return ['Missing account'];
         if (!occurredAt) return ['Missing occurredAt'];
         if (!amount) return ['Missing amount'];
         if (!description) return ['Missing description'];
-        if (!comments) return ['Missing comments'];
 
         if (!Validators.isMongoID(account)) return ['Invalid account ID'];
         if (!Validators.isMongoID(subsubcategory)) return ['Invalid subsubcategory ID'];
@@ -37,7 +35,7 @@ export class CreateMovementDto {
         const parsedAmount = Number(amount);
         if (isNaN(parsedAmount)) return ['Invalid amount'];
         
-        return [undefined,  new CreateMovementDto( description, comments, account, occurredAt, amount, source, subsubcategory, transfererId )]
+        return [undefined,  new CreateMovementDto( description, account, occurredAt, amount, source, subsubcategory, transfererId )]
 
     }
 }
@@ -46,7 +44,6 @@ export class UpdateMovementDto {
 
     private constructor(
         public readonly description : string,
-        public readonly comments : string,
         public readonly amount : number,
         public readonly occurredAt : Date,
         // public readonly source : string,
@@ -57,10 +54,9 @@ export class UpdateMovementDto {
 
     static update( object: { [key: string]: any } ): [string?, UpdateMovementDto?] {
 
-        const { description, comments, amount, occurredAt, subsubcategory, transfererId } = object;
+        const { description, amount, occurredAt, subsubcategory, transfererId } = object;
         
         if (!description) return ['Missing occurredAt'];
-        if (!comments) return ['Missing occurredAt'];
         if (!occurredAt) return ['Missing occurredAt'];
         if (!amount) return ['Missing amount'];
 
@@ -73,7 +69,7 @@ export class UpdateMovementDto {
         const parsedAmount = Number(amount);
         if (isNaN(parsedAmount)) return ['Invalid amount'];
         
-        return [undefined,  new UpdateMovementDto( description, comments, amount, occurredAt, subsubcategory, transfererId )]
+        return [undefined,  new UpdateMovementDto( description, amount, occurredAt, subsubcategory, transfererId )]
 
     }
 

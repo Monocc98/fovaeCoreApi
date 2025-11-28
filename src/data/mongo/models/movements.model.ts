@@ -7,7 +7,6 @@ const movementsSchema = new mongoose.Schema({
   },
   comments: {
     type: String,
-    required: true,
   },
   account: {
     type: mongoose.Schema.Types.ObjectId,
