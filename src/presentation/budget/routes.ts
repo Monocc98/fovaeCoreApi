@@ -17,7 +17,7 @@ export class BudgetRoutes {
     
     // Definir las rutas
     router.get('/', controller.getBudgets);
-    router.get('/account/:idAccount', controller.getBudgetsByAccountId);
+    router.get('/company/:idCompany', controller.getBudgetsByCompanyId);
     router.get('/:idBudget', controller.getBudgetById);
 
 

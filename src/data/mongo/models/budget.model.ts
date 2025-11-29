@@ -11,9 +11,9 @@ const budgetSchema = new mongoose.Schema({
       min: 1,
       max: 12,
     },
-    account: {
+    company: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Account',
+      ref: 'Company',
       required: true,
     },
     amount: {

@@ -6,22 +6,22 @@ export class CreateBudgetDto {
     private constructor(
         public readonly year : number,
         public readonly month : number,
-        public readonly account : string,
+        public readonly company : string,
         public readonly amount : number,
         public readonly subsubcategory : string,
     ) {}
 
     static create( object: { [key: string]: any } ): [string?, CreateBudgetDto?] {
 
-        const { year, month, account, amount, subsubcategory } = object;
+        const { year, month, company, amount, subsubcategory } = object;
         
-        if (!account) return ['Missing account'];
+        if (!company) return ['Missing company'];
         if (!year) return ['Missing year'];
         if (!amount) return ['Missing amount'];
         if (!month) return ['Missing month'];
         if (!subsubcategory) return ['Missing subsubcategory'];
 
-        if (!Validators.isMongoID(account)) return ['Invalid account ID'];
+        if (!Validators.isMongoID(company)) return ['Invalid company ID'];
         if (!Validators.isMongoID(subsubcategory)) return ['Invalid subsubcategory ID'];
         
 
@@ -29,7 +29,7 @@ export class CreateBudgetDto {
         const parsedAmount = Number(amount);
         if (isNaN(parsedAmount)) return ['Invalid amount'];
         
-        return [undefined,  new CreateBudgetDto( year, month, account, amount, subsubcategory )]
+        return [undefined,  new CreateBudgetDto( year, month, company, amount, subsubcategory )]
 
     }
 }

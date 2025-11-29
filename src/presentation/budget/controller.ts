@@ -42,11 +42,11 @@ export class BudgetController {
         
     }
 
-    getBudgetsByAccountId = async(req: Request, res: Response) => {
+    getBudgetsByCompanyId = async(req: Request, res: Response) => {
 
-        const idAccount = req.params.idAccount
+        const idCompany = req.params.idCompany
 
-        this.budgetService.getBudgetsByAccountId( idAccount )
+        this.budgetService.getBudgetsByCompanyId( idCompany )
             .then( budgets => res.json( budgets ))
             .catch( error => this.handleError( error, res ));
         

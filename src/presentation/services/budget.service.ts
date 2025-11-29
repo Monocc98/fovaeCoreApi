@@ -1,5 +1,4 @@
 import { Validators } from "../../config";
-import { AccountBalancesModel } from "../../data";
 import { BudgetModel } from "../../data/mongo/models/budget.model";
 import { CustomError } from "../../domain";
 import { CreateBudgetDto, UpdateBudgetDto } from "../../domain/dtos/budget/budget.dto";
@@ -94,14 +93,14 @@ export class BudgetService {
 
     }
 
-    async getBudgetsByAccountId( idAccount: string ) {
+    async getBudgetsByCompanyId( idCompany: string ) {
 
         try {
 
-            if(!Validators.isMongoID(idAccount)) throw CustomError.badRequest('Invalid account ID');
-            const accountIdMongo = Validators.convertToUid(idAccount);
+            if(!Validators.isMongoID(idCompany)) throw CustomError.badRequest('Invalid company ID');
+            const companyIdMongo = Validators.convertToUid(idCompany);
 
-            const budgets = await BudgetModel.find({ account: accountIdMongo })
+            const budgets = await BudgetModel.find({ company: companyIdMongo })
                 .populate('subsubcategory')
 
             return {
@@ -120,8 +119,8 @@ export class BudgetService {
 
         try {
 
-            if(!Validators.isMongoID(idBudget)) throw CustomError.badRequest('Invalid account ID');
-            const accountIdMongo = Validators.convertToUid(idBudget);
+            if(!Validators.isMongoID(idBudget)) throw CustomError.badRequest('Invalid company ID');
+            const companyIdMongo = Validators.convertToUid(idBudget);
 
             const budget = await BudgetModel.findById(idBudget)
                 .populate({
