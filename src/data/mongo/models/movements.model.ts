@@ -45,6 +45,23 @@ const movementsSchema = new mongoose.Schema({
   transfererId: {
     type: String,
   },
+    externalNumber: {
+    type: String, // "Numero" del CSV
+  },
+  externalCategoryRaw: {
+    type: String, // texto completo de "Categoria" ej. "Colegiaturas [60101001]"
+  },
+  externalConceptKey: {
+    type: String, // ej. "60101001" (la parte entre corchetes)
+    index: true,
+  },
+  externalName: {
+    type: String, // "Nombre" del CSV
+  },
+  importBatchId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'MovementImportBatch',
+  },
 });
 
 movementsSchema.set('toJSON', {

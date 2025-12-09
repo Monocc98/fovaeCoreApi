@@ -2,6 +2,8 @@ import { Response, Request } from "express";
 import { CreateMovementDto, CustomError, UpdateMovementDto } from "../../domain";
 import { MovementService } from "../services/movement.service";
 import { error } from "console";
+import { ImportSolucionFactibleDto } from "../../domain/dtos/movement/ImportSolucionFactible.dto";
+import { ConfirmSolucionFactibleDto } from "../../domain/dtos/movement/confirmSolucionFactible.dto";
 
 
 
@@ -87,4 +89,38 @@ export class MovementController {
             .catch( error => this.handleError( error, res ) );
 
     }
+
+      // ====== NUEVO: subir archivo Solución Factible ======
+  uploadSolucionFactible = async(req: Request, res: Response) => {
+    try {
+      const [error, dto] = ImportSolucionFactibleDto.create(req.body);
+      if (error) return res.status(400).json({ error });
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'Missing file' });
+      }
+
+      const result = await this.movementService.importSolucionFactible(dto!, req.file);
+      return res.json(result);
+
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
+
+  // ====== NUEVO: confirmar clasificación e insertar movimientos ======
+  confirmSolucionFactible = async(req: Request, res: Response) => {
+    try {
+      const { batchId } = req.params;
+
+      const [error, dto] = ConfirmSolucionFactibleDto.create(req.body);
+      if (error) return res.status(400).json({ error });
+
+      const result = await this.movementService.confirmSolucionFactible(batchId, dto!);
+      return res.json(result);
+
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  }
 }

@@ -1,8 +1,22 @@
-import { Validators } from "../../config";
+import { getExternalConceptKeyFromCategory, Validators, parseDateDDMMYYYY } from "../../config";
 import { AccountBalancesModel, MovementModel } from "../../data";
+import { ConceptRuleModel } from "../../data/mongo/models/conceptRule.model";
+import { MovementImportBatchModel } from "../../data/mongo/models/movementImportBatch.model";
 import { CreateMovementDto, CustomError, UpdateMovementDto } from "../../domain";
+import { ConfirmSolucionFactibleDto } from "../../domain/dtos/movement/confirmSolucionFactible.dto";
+
+import { parse } from 'csv-parse/sync';
+import type { Express } from 'express';
+import { ImportSolucionFactibleDto } from "../../domain/dtos/movement/ImportSolucionFactible.dto";
 
 
+interface SolucionFactibleRow {
+  Numero: string;
+  Fecha: string;
+  Categoria: string;
+  Nombre: string;
+  Monto: string;
+}
 
 export class MovementService {
     
@@ -187,5 +201,229 @@ export class MovementService {
         }
 
     }
+
+    // ========== NUEVO: 1) importar archivo y devolver resumen ==========
+  async importSolucionFactible(
+    dto: ImportSolucionFactibleDto,
+    file: Express.Multer.File
+  ) {
+    try {
+      const accountIdMongo = Validators.convertToUid(dto.accountId);
+
+      const csvContent = file.buffer.toString('utf8');
+
+      const records = parse(csvContent, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+      }) as SolucionFactibleRow[];
+
+    const normalizedRows = records.map((row, index) => {
+        const externalConceptKey = getExternalConceptKeyFromCategory(row.Categoria);
+
+        const occurredAt = parseDateDDMMYYYY(row.Fecha);
+        if (!occurredAt) {
+            // puedes ajustar el mensaje si quieres algo más amigable
+            throw CustomError.badRequest(
+            `Fecha inválida en la fila ${index + 2} ("${row.Fecha}"). Se espera formato dd/MM/yyyy`
+            );
+        }
+
+        return {
+            externalNumber: row.Numero,
+            occurredAt,
+            externalCategoryRaw: row.Categoria,
+            externalConceptKey,
+            externalName: row.Nombre,
+            amount: Number(row.Monto),
+        };
+    });
+
+      const batch = await MovementImportBatchModel.create({
+        account: accountIdMongo,
+        source: 'SOLUCION_FACTIBLE',
+        rows: normalizedRows,
+        status: 'PENDING',
+      });
+
+      // Agrupar por concepto
+      const conceptosMap = new Map<
+        string,
+        { externalCategoryRaw: string; count: number }
+      >();
+
+      for (const row of normalizedRows) {
+        const key = row.externalConceptKey || 'SIN_CLAVE';
+        const current = conceptosMap.get(key);
+
+        if (!current) {
+          conceptosMap.set(key, {
+            externalCategoryRaw: row.externalCategoryRaw,
+            count: 1,
+          });
+        } else {
+          current.count += 1;
+        }
+      }
+
+      const conceptKeys = Array.from(conceptosMap.keys());
+
+      const existingRules = await ConceptRuleModel.find({
+        account: accountIdMongo,
+        externalConceptKey: { $in: conceptKeys },
+      }).lean();
+
+      const rulesByKey = new Map<string, any>();
+      for (const rule of existingRules) {
+        rulesByKey.set(rule.externalConceptKey, rule);
+      }
+
+      const concepts = conceptKeys.map((key) => {
+        const info = conceptosMap.get(key)!;
+        const rule = rulesByKey.get(key) || null;
+
+        return {
+          externalConceptKey: key,
+          externalCategoryRaw: info.externalCategoryRaw,
+          count: info.count,
+          existingRule: rule
+            ? {
+                id: rule._id,
+                subsubcategory: rule.subsubcategory,
+                timesConfirmed: rule.timesConfirmed,
+                timesCorrected: rule.timesCorrected,
+                locked: rule.locked,
+              }
+            : null,
+        };
+      });
+
+      return {
+        importBatchId: batch._id,
+        accountId: dto.accountId,
+        source: 'SOLUCION_FACTIBLE',
+        totalRows: normalizedRows.length,
+        concepts,
+      };
+
+    } catch (error) {
+      throw CustomError.internalServer(`${ error }`);
+    }
+  }
+
+  // ========== NUEVO: 2) confirmar conceptos e insertar movimientos ==========
+  async confirmSolucionFactible(
+    batchId: string,
+    dto: ConfirmSolucionFactibleDto
+  ) {
+    try {
+      if (!Validators.isMongoID(batchId)) {
+        throw CustomError.badRequest('Invalid batchId');
+      }
+      const batchIdMongo = Validators.convertToUid(batchId);
+
+      const batch = await MovementImportBatchModel.findById(batchIdMongo);
+      if (!batch) throw CustomError.notFound('Batch not found');
+
+      if (batch.status === 'PROCESSED') {
+        throw CustomError.badRequest('Batch already processed');
+      }
+
+      const accountId = batch.account;
+
+      const mapConceptToSubsub = new Map<string, string>();
+      for (const c of dto.concepts) {
+        mapConceptToSubsub.set(c.externalConceptKey, c.subsubcategoryId);
+      }
+
+      const keys = Array.from(mapConceptToSubsub.keys());
+      const existingRules = await ConceptRuleModel.find({
+        account: accountId,
+        externalConceptKey: { $in: keys },
+      });
+
+      const rulesByKey = new Map<string, any>();
+      for (const rule of existingRules) {
+        rulesByKey.set(rule.externalConceptKey, rule);
+      }
+
+      // Crear / actualizar reglas
+      for (const key of keys) {
+        const chosenSubsub = mapConceptToSubsub.get(key)!;
+        const existingRule = rulesByKey.get(key);
+
+        if (!existingRule) {
+          await ConceptRuleModel.create({
+            account: accountId,
+            externalConceptKey: key,
+            subsubcategory: chosenSubsub,
+            timesConfirmed: 1,
+            timesCorrected: 0,
+            locked: false,
+            lastUsedAt: new Date(),
+          });
+        } else {
+          if (String(existingRule.subsubcategory) === String(chosenSubsub)) {
+            existingRule.timesConfirmed += 1;
+          } else {
+            existingRule.subsubcategory = chosenSubsub;
+            existingRule.timesConfirmed = 1;
+            existingRule.timesCorrected += 1;
+          }
+          existingRule.lastUsedAt = new Date();
+          await existingRule.save();
+        }
+      }
+
+      // Crear movimientos
+      const movementsToInsert = (batch.rows as any[]).map((row) => {
+        const subsubcategoryId = mapConceptToSubsub.get(row.externalConceptKey || 'SIN_CLAVE');
+
+        if (!subsubcategoryId) {
+          throw CustomError.badRequest(
+            `No subsubcategory provided for concept ${row.externalConceptKey}`
+          );
+        }
+
+        return {
+          description: `${row.externalCategoryRaw} - ${row.externalName}`,
+          comments: '',
+          account: accountId,
+          occurredAt: row.occurredAt,
+          recordedAt: new Date(),
+          amount: row.amount,
+          source: 'SOLUCION_FACTIBLE',
+          subsubcategory: subsubcategoryId,
+          tags: [],
+          transfererId: undefined,
+          externalNumber: row.externalNumber,
+          externalCategoryRaw: row.externalCategoryRaw,
+          externalConceptKey: row.externalConceptKey,
+          externalName: row.externalName,
+          importBatchId: batch._id,
+        };
+      });
+
+      await MovementModel.insertMany(movementsToInsert);
+
+      batch.status = 'PROCESSED';
+      await batch.save();
+
+      // actualizar balance de la cuenta
+      const totalAmount = movementsToInsert.reduce((acc, m) => acc + Number(m.amount ?? 0), 0);
+      await AccountBalancesModel.updateOne(
+        { _id: accountId },
+        { $inc: { balance: totalAmount } }
+      );
+
+      return {
+        message: 'Movements imported successfully',
+        insertedCount: movementsToInsert.length,
+      };
+
+    } catch (error) {
+      throw CustomError.internalServer(`${ error }`);
+    }
+  }
 
 }
