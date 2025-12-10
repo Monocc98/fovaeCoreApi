@@ -18,6 +18,9 @@ interface SolucionFactibleRow {
   Monto: string;
 }
 
+// 🔹 Claves externas que NO queremos importar
+const IGNORED_EXTERNAL_KEYS = new Set<string>(["60101001"]);
+
 export class MovementService {
     
     // DI
@@ -202,131 +205,269 @@ export class MovementService {
 
     }
 
-    // ========== NUEVO: 1) importar archivo y devolver resumen ==========
-  async importSolucionFactible(
-    dto: ImportSolucionFactibleDto,
-    file: Express.Multer.File
-  ) {
-    try {
-      const accountIdMongo = Validators.convertToUid(dto.accountId);
+    // ========== 1) importar archivo y devolver resumen ==========
+ async importSolucionFactible(
+  dto: ImportSolucionFactibleDto,
+  file: Express.Multer.File
+) {
+  try {
+    const accountIdMongo = Validators.convertToUid(dto.accountId);
 
-      const csvContent = file.buffer.toString('utf8');
+    const csvContent = file.buffer.toString("utf8");
 
-      const records = parse(csvContent, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-      }) as SolucionFactibleRow[];
+    // 1) Partir en líneas y limpiar vacías
+    const allLines = csvContent
+      .split(/\r?\n/)
+      .map((l) => l.trimEnd())
+      .filter((l) => l.trim() !== "");
 
-    const normalizedRows = records.map((row, index) => {
-        const externalConceptKey = getExternalConceptKeyFromCategory(row.Categoria);
+    if (!allLines.length) {
+      throw CustomError.badRequest("El archivo CSV está vacío");
+    }
+
+    // 2) Buscar la fila de encabezados (donde está 'Número,Fecha,Categoría,...')
+    const normalizeLine = (line: string) =>
+      line
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "") // quita acentos
+        .trim();
+
+    const headerIndex = allLines.findIndex((line) => {
+      const norm = normalizeLine(line);
+      // tolerante: numero,fecha,categoria con coma o punto y coma
+      return (
+        norm.startsWith("numero,fecha,categoria") ||
+        norm.startsWith("numero;fecha;categoria")
+      );
+    });
+
+    if (headerIndex === -1) {
+      throw CustomError.badRequest(
+        "No se encontró la cabecera 'Número, Fecha, Categoría' en el CSV"
+      );
+    }
+
+    // 3) Quedarnos sólo con la parte desde el encabezado hacia abajo
+    const dataLines = allLines.slice(headerIndex);
+
+    // 4) Detectar delimitador (coma o punto y coma)
+    const headerLine = dataLines[0];
+    const commaCount = (headerLine.match(/,/g) || []).length;
+    const semicolonCount = (headerLine.match(/;/g) || []).length;
+
+    const delimiter = semicolonCount > commaCount ? ";" : ",";
+
+    const csvOnlyData = dataLines.join("\n");
+
+    // 5) Parsear con csv-parse usando esa cabecera
+    const rawRecords = parse(csvOnlyData, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      delimiter,
+    }) as Record<string, string>[];
+
+    if (!rawRecords.length) {
+      throw CustomError.badRequest(
+        "No se encontraron filas de datos en el CSV"
+      );
+    }
+
+    // 6) Normalizar encabezados → a nuestro modelo SolucionFactibleRow
+    const normalizeHeader = (h: string) =>
+      h
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "") // quita acentos
+        .trim();
+
+    const records: SolucionFactibleRow[] = rawRecords
+      .map((raw) => {
+        const mapped: Partial<SolucionFactibleRow> = {};
+
+        for (const [key, value] of Object.entries(raw)) {
+          const nk = normalizeHeader(key);
+
+          if (nk === "numero") {
+            mapped.Numero = String(value ?? "").trim();
+          } else if (nk === "fecha") {
+            mapped.Fecha = String(value ?? "").trim();
+          } else if (nk.startsWith("categoria")) {
+            mapped.Categoria = String(value ?? "").trim();
+          } else if (nk === "nombre" || nk === "pagado a" || nk === "pagadoa") {
+            // aceptamos tanto 'Nombre' como 'Pagado a'
+            mapped.Nombre = String(value ?? "").trim();
+          } else if (nk === "monto") {
+            mapped.Monto = String(value ?? "").trim();
+          }
+        }
+
+        // Validación mínima: que tenga Numero, Fecha, Categoria y Monto
+        if (
+          !mapped.Numero ||
+          !mapped.Fecha ||
+          !mapped.Categoria ||
+          !mapped.Monto
+        ) {
+          return null; // descartamos filas incompletas
+        }
+
+        return mapped as SolucionFactibleRow;
+      })
+      .filter((r): r is SolucionFactibleRow => r !== null);
+
+    if (!records.length) {
+      throw CustomError.badRequest(
+        "No se encontraron filas válidas (con Número, Fecha, Categoría y Monto) en el CSV"
+      );
+    }
+
+    // 7) Normalizar filas + parsear fecha + extraer clave + ignorar colegiaturas
+    const normalizedRows = records
+      .map((row, index) => {
+        // ignorar exactamente "Colegiaturas [60101001]"
+        const categoriaTrim = row.Categoria.trim();
+        if (categoriaTrim === "Colegiaturas [60101001]") {
+          return null;
+        }
+
+        const externalConceptKey = getExternalConceptKeyFromCategory(
+          row.Categoria
+        );
 
         const occurredAt = parseDateDDMMYYYY(row.Fecha);
         if (!occurredAt) {
-            // puedes ajustar el mensaje si quieres algo más amigable
-            throw CustomError.badRequest(
-            `Fecha inválida en la fila ${index + 2} ("${row.Fecha}"). Se espera formato dd/MM/yyyy`
-            );
+          throw CustomError.badRequest(
+            `Fecha inválida en la fila de datos #${index + 1} ("${
+              row.Fecha
+            }"). Se espera formato dd/MM/yyyy`
+          );
+        }
+
+        // limpiar monto (por si viene con comas como separador de miles)
+        const amountNumber = Number(
+          String(row.Monto).replace(/,/g, "").replace(/\s+/g, "")
+        );
+        if (Number.isNaN(amountNumber)) {
+          throw CustomError.badRequest(
+            `Monto inválido en la fila de datos #${index + 1} ("${row.Monto}")`
+          );
         }
 
         return {
-            externalNumber: row.Numero,
-            occurredAt,
-            externalCategoryRaw: row.Categoria,
-            externalConceptKey,
-            externalName: row.Nombre,
-            amount: Number(row.Monto),
+          externalNumber: row.Numero,
+          occurredAt,
+          externalCategoryRaw: row.Categoria,
+          externalConceptKey,
+          externalName: row.Nombre,
+          amount: amountNumber,
         };
+      })
+      .filter((r) => r !== null) as Array<{
+      externalNumber: string;
+      occurredAt: Date;
+      externalCategoryRaw: string;
+      externalConceptKey: string | null;
+      externalName: string;
+      amount: number;
+    }>;
+
+    if (!normalizedRows.length) {
+      throw CustomError.badRequest(
+        "Todas las filas fueron descartadas (por categoría ignorada o datos inválidos)"
+      );
+    }
+
+    // 8) Guardar batch en Mongo
+    const batch = await MovementImportBatchModel.create({
+      account: accountIdMongo,
+      source: "SOLUCION_FACTIBLE",
+      rows: normalizedRows,
+      status: "PENDING",
     });
 
-      const batch = await MovementImportBatchModel.create({
-        account: accountIdMongo,
-        source: 'SOLUCION_FACTIBLE',
-        rows: normalizedRows,
-        status: 'PENDING',
-      });
+    // 9) Agrupar por concepto (de lo que sí quedó)
+    const conceptosMap = new Map<
+      string,
+      { externalCategoryRaw: string; count: number }
+    >();
 
-      // Agrupar por concepto
-      const conceptosMap = new Map<
-        string,
-        { externalCategoryRaw: string; count: number }
-      >();
+    for (const row of normalizedRows) {
+      const key = row.externalConceptKey || "SIN_CLAVE";
+      const current = conceptosMap.get(key);
 
-      for (const row of normalizedRows) {
-        const key = row.externalConceptKey || 'SIN_CLAVE';
-        const current = conceptosMap.get(key);
-
-        if (!current) {
-          conceptosMap.set(key, {
-            externalCategoryRaw: row.externalCategoryRaw,
-            count: 1,
-          });
-        } else {
-          current.count += 1;
-        }
+      if (!current) {
+        conceptosMap.set(key, {
+          externalCategoryRaw: row.externalCategoryRaw,
+          count: 1,
+        });
+      } else {
+        current.count += 1;
       }
+    }
 
-      const conceptKeys = Array.from(conceptosMap.keys());
+    const conceptKeys = Array.from(conceptosMap.keys());
 
-      const existingRules = await ConceptRuleModel.find({
-        account: accountIdMongo,
-        externalConceptKey: { $in: conceptKeys },
-      }).lean();
+    const existingRules = await ConceptRuleModel.find({
+      account: accountIdMongo,
+      externalConceptKey: { $in: conceptKeys },
+    }).lean();
 
-      const rulesByKey = new Map<string, any>();
-      for (const rule of existingRules) {
-        rulesByKey.set(rule.externalConceptKey, rule);
-      }
+    const rulesByKey = new Map<string, any>();
+    for (const rule of existingRules) {
+      rulesByKey.set(rule.externalConceptKey, rule);
+    }
 
-      const concepts = conceptKeys.map((key) => {
-        const info = conceptosMap.get(key)!;
-        const rule = rulesByKey.get(key) || null;
-
-        return {
-          externalConceptKey: key,
-          externalCategoryRaw: info.externalCategoryRaw,
-          count: info.count,
-          existingRule: rule
-            ? {
-                id: rule._id,
-                subsubcategory: rule.subsubcategory,
-                timesConfirmed: rule.timesConfirmed,
-                timesCorrected: rule.timesCorrected,
-                locked: rule.locked,
-              }
-            : null,
-        };
-      });
+    const concepts = conceptKeys.map((key) => {
+      const info = conceptosMap.get(key)!;
+      const rule = rulesByKey.get(key) || null;
 
       return {
-        importBatchId: batch._id,
-        accountId: dto.accountId,
-        source: 'SOLUCION_FACTIBLE',
-        totalRows: normalizedRows.length,
-        concepts,
+        externalConceptKey: key,
+        externalCategoryRaw: info.externalCategoryRaw,
+        count: info.count,
+        existingRule: rule
+          ? {
+              id: rule._id,
+              subsubcategory: rule.subsubcategory,
+              timesConfirmed: rule.timesConfirmed,
+              timesCorrected: rule.timesCorrected,
+              locked: rule.locked,
+            }
+          : null,
       };
+    });
 
-    } catch (error) {
-      throw CustomError.internalServer(`${ error }`);
-    }
+    return {
+      importBatchId: batch._id,
+      accountId: dto.accountId,
+      source: "SOLUCION_FACTIBLE",
+      totalRows: normalizedRows.length,
+      concepts,
+    };
+  } catch (error) {
+    throw CustomError.internalServer(`${error}`);
   }
+}
 
-  // ========== NUEVO: 2) confirmar conceptos e insertar movimientos ==========
+
+  // ========== 2) confirmar conceptos e insertar movimientos ==========
   async confirmSolucionFactible(
     batchId: string,
     dto: ConfirmSolucionFactibleDto
   ) {
     try {
       if (!Validators.isMongoID(batchId)) {
-        throw CustomError.badRequest('Invalid batchId');
+        throw CustomError.badRequest("Invalid batchId");
       }
       const batchIdMongo = Validators.convertToUid(batchId);
 
       const batch = await MovementImportBatchModel.findById(batchIdMongo);
-      if (!batch) throw CustomError.notFound('Batch not found');
+      if (!batch) throw CustomError.notFound("Batch not found");
 
-      if (batch.status === 'PROCESSED') {
-        throw CustomError.badRequest('Batch already processed');
+      if (batch.status === "PROCESSED") {
+        throw CustomError.badRequest("Batch already processed");
       }
 
       const accountId = batch.account;
@@ -377,7 +518,9 @@ export class MovementService {
 
       // Crear movimientos
       const movementsToInsert = (batch.rows as any[]).map((row) => {
-        const subsubcategoryId = mapConceptToSubsub.get(row.externalConceptKey || 'SIN_CLAVE');
+        const subsubcategoryId = mapConceptToSubsub.get(
+          row.externalConceptKey || "SIN_CLAVE"
+        );
 
         if (!subsubcategoryId) {
           throw CustomError.badRequest(
@@ -387,12 +530,12 @@ export class MovementService {
 
         return {
           description: `${row.externalCategoryRaw} - ${row.externalName}`,
-          comments: '',
+          comments: "",
           account: accountId,
           occurredAt: row.occurredAt,
           recordedAt: new Date(),
           amount: row.amount,
-          source: 'SOLUCION_FACTIBLE',
+          source: "SOLUCION_FACTIBLE",
           subsubcategory: subsubcategoryId,
           tags: [],
           transfererId: undefined,
@@ -406,23 +549,24 @@ export class MovementService {
 
       await MovementModel.insertMany(movementsToInsert);
 
-      batch.status = 'PROCESSED';
+      batch.status = "PROCESSED";
       await batch.save();
 
-      // actualizar balance de la cuenta
-      const totalAmount = movementsToInsert.reduce((acc, m) => acc + Number(m.amount ?? 0), 0);
+      const totalAmount = movementsToInsert.reduce(
+        (acc, m) => acc + Number(m.amount ?? 0),
+        0
+      );
       await AccountBalancesModel.updateOne(
         { _id: accountId },
         { $inc: { balance: totalAmount } }
       );
 
       return {
-        message: 'Movements imported successfully',
+        message: "Movements imported successfully",
         insertedCount: movementsToInsert.length,
       };
-
     } catch (error) {
-      throw CustomError.internalServer(`${ error }`);
+      throw CustomError.internalServer(`${error}`);
     }
   }
 
