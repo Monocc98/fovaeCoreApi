@@ -9,7 +9,7 @@ const movementImportBatchSchema = new mongoose.Schema({
   },
   source: {
     type: String,
-    enum: ['SOLUCION_FACTIBLE'],
+    enum: ['SOLUCION_FACTIBLE', 'SERVO_ESCOLAR'],
     required: true,
     default: 'SOLUCION_FACTIBLE',
   },

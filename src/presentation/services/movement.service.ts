@@ -1,4 +1,4 @@
-import { getExternalConceptKeyFromCategory, Validators, parseDateDDMMYYYY } from "../../config";
+import { getExternalConceptKeyFromCategory, Validators, parseDateDDMMYYYY, findHeaderRowIndex, buildHeaderMap } from "../../config";
 import { AccountBalancesModel, MovementModel } from "../../data";
 import { ConceptRuleModel } from "../../data/mongo/models/conceptRule.model";
 import { MovementImportBatchModel } from "../../data/mongo/models/movementImportBatch.model";
@@ -6,6 +6,7 @@ import { CreateMovementDto, CustomError, UpdateMovementDto } from "../../domain"
 import { ConfirmSolucionFactibleDto } from "../../domain/dtos/movement/confirmSolucionFactible.dto";
 
 import { parse } from 'csv-parse/sync';
+import * as XLSX from "xlsx";
 import type { Express } from 'express';
 import { ImportSolucionFactibleDto } from "../../domain/dtos/movement/ImportSolucionFactible.dto";
 
@@ -569,5 +570,152 @@ export class MovementService {
       throw CustomError.internalServer(`${error}`);
     }
   }
+
+  async importServoEscolar(
+  dto: ImportSolucionFactibleDto, // puedes crear ImportServoEscolarDto si quieres
+  file: Express.Multer.File
+) {
+  try {
+    const accountIdMongo = Validators.convertToUid(dto.accountId);
+
+    const wb = XLSX.read(file.buffer, { type: "buffer" });
+    const sheetName = wb.SheetNames[0]; // o “Hoja”
+    const ws = wb.Sheets[sheetName];
+
+    // rows como matriz (incluye filas “basura”)
+    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true });
+
+    const headerRowIndex = findHeaderRowIndex(rows);
+    if (headerRowIndex < 0) {
+      throw CustomError.badRequest("No pude detectar la fila de cabecera automáticamente.");
+    }
+
+    const header = rows[headerRowIndex];
+    const map = buildHeaderMap(header);
+
+    const idx = (s?: string) =>
+      s === undefined || s === "" ? undefined : Number(s);
+    const iFecha = idx(map.fecha)!;
+    const iConc = idx(map.conc)!;
+    const iImporte = idx(map.importe)!;
+    const iNombre = idx(map.nombre);
+    const iMatricula = idx(map.matricula);
+    const iGrupo = idx(map.grupo);
+    const iPeriodo = idx(map.periodo);
+    const iFormaPago = idx(map.formaPago);
+
+    const dataRows = rows.slice(headerRowIndex + 1);
+
+    const normalizedRows = dataRows
+      .map((r, pos) => {
+        // ignora filas vacías
+        if (!r || r.every((c) => c === null || c === undefined || String(c).trim() === "")) return null;
+
+        const occurredAtRaw = r[iFecha];
+        const concRaw = r[iConc];
+        const importeRaw = r[iImporte];
+
+        // “totales” o filas raras: si no hay conc o importe -> fuera
+        if (!concRaw || importeRaw === undefined || importeRaw === null) return null;
+
+        // Fecha: Excel puede venir Date, número serial, o string
+        let occurredAt: Date | null = null;
+        if (occurredAtRaw instanceof Date) occurredAt = occurredAtRaw;
+        else if (typeof occurredAtRaw === "number") {
+          // XLSX interpreta serial; esto suele funcionar:
+          const d = XLSX.SSF.parse_date_code(occurredAtRaw);
+          if (d) occurredAt = new Date(d.y, d.m - 1, d.d, d.H, d.M, d.S);
+        } else if (typeof occurredAtRaw === "string") {
+          occurredAt = parseDateDDMMYYYY(occurredAtRaw) ?? new Date(occurredAtRaw);
+        }
+
+        if (!occurredAt || isNaN(occurredAt.getTime())) {
+          throw CustomError.badRequest(
+            `Fecha inválida en fila Excel ${headerRowIndex + 2 + pos}`
+          );
+        }
+
+        const amount = Number(importeRaw);
+        if (Number.isNaN(amount)) {
+          throw CustomError.badRequest(
+            `Importe inválido en fila Excel ${headerRowIndex + 2 + pos}`
+          );
+        }
+
+        const externalConceptKey = String(concRaw).trim(); // ✅ agrupar por Conc
+        const alumno = iNombre !== undefined ? String(r[iNombre] ?? "").trim() : "";
+        const matricula = iMatricula !== undefined ? String(r[iMatricula] ?? "").trim() : "";
+        const grupo = iGrupo !== undefined ? String(r[iGrupo] ?? "").trim() : "";
+        const periodo = iPeriodo !== undefined ? String(r[iPeriodo] ?? "").trim() : "";
+        const formaPago = iFormaPago !== undefined ? String(r[iFormaPago] ?? "").trim() : "";
+
+        return {
+          externalNumber: String(r[0] ?? ""), // “No.” si te sirve
+          occurredAt,
+          externalCategoryRaw: `ServoEscolar:${externalConceptKey}`, // o el texto que quieras
+          externalConceptKey,
+          externalName: alumno, // aquí guardas el alumno para trazabilidad
+          amount, // ingresos: positivo
+          meta: { matricula, grupo, periodo, formaPago },
+        };
+      })
+      .filter(Boolean) as any[];
+
+    const batch = await MovementImportBatchModel.create({
+      account: accountIdMongo,
+      source: "SERVO_ESCOLAR",
+      rows: normalizedRows,
+      status: "PENDING",
+    });
+
+    // Agrupar por concepto (Conc)
+    const conceptosMap = new Map<string, { externalCategoryRaw: string; count: number }>();
+    for (const row of normalizedRows) {
+      const key = row.externalConceptKey || "SIN_CLAVE";
+      const cur = conceptosMap.get(key);
+      if (!cur) conceptosMap.set(key, { externalCategoryRaw: row.externalCategoryRaw, count: 1 });
+      else cur.count += 1;
+    }
+
+    const conceptKeys = Array.from(conceptosMap.keys());
+
+    const existingRules = await ConceptRuleModel.find({
+      account: accountIdMongo,
+      externalConceptKey: { $in: conceptKeys },
+    }).lean();
+
+    const rulesByKey = new Map(existingRules.map((r: any) => [r.externalConceptKey, r]));
+
+    const concepts = conceptKeys.map((key) => {
+      const info = conceptosMap.get(key)!;
+      const rule = rulesByKey.get(key) || null;
+
+      return {
+        externalConceptKey: key,
+        externalCategoryRaw: info.externalCategoryRaw,
+        count: info.count,
+        existingRule: rule
+          ? {
+              id: rule._id,
+              subsubcategory: rule.subsubcategory,
+              timesConfirmed: rule.timesConfirmed,
+              timesCorrected: rule.timesCorrected,
+              locked: rule.locked,
+            }
+          : null,
+      };
+    });
+
+    return {
+      importBatchId: batch._id,
+      accountId: dto.accountId,
+      source: "SERVO_ESCOLAR",
+      totalRows: normalizedRows.length,
+      concepts,
+    };
+  } catch (error) {
+    throw CustomError.internalServer(`${error}`);
+  }
+}
 
 }

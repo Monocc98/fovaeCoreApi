@@ -47,6 +47,13 @@ export class MovementsRoutes {
       controller.confirmSolucionFactible
     );
 
+    // ServoEscolar
+    router.post(
+      "/imports/servo-escolar",
+      upload.single("file"),
+      controller.uploadServoEscolar
+    );
+
     return router;
   }
 

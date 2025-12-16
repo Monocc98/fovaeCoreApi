@@ -123,4 +123,23 @@ export class MovementController {
       this.handleError(error, res);
     }
   }
+
+    uploadServoEscolar = async (req: Request, res: Response) => {
+    try {
+      const [error, dto] = ImportSolucionFactibleDto.create(req.body);
+      if (error) return res.status(400).json({ error });
+
+      if (!req.file) {
+        return res.status(400).json({ error: "Missing file" });
+      }
+
+      const result = await this.movementService.importServoEscolar(dto!, req.file);
+      return res.json(result);
+
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  };
+  
 }
+
