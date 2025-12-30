@@ -159,19 +159,19 @@ export class CategoryService {
                         pipeline: [
                           { $match: { $expr: { $eq: ["$parent", "$$subcategoryId"] } } },
                           { $sort: { name: 1 } },
-                          { $project: { _id: 1, name: 1, parent: 1, company: 1, scope: 1, type: 1 } },
+                          { $project: { _id: 1, name: 1, parent: 1, company: 1, scope: 1, type: 1, sortIndex: 1 } },
                         ],
                         as: "subsubcategories",
                       },
                     },
 
-                    { $project: { _id: 1, name: 1, parent: 1, company: 1, scope: 1, type: 1, subsubcategories: 1 } },
+                    { $project: { _id: 1, name: 1, parent: 1, company: 1, scope: 1, type: 1, subsubcategories: 1, sortIndex: 1 } },
                   ],
                   as: "subcategories",
                 },
               },
 
-              { $project: { _id: 1, name: 1, company: 1, scope: 1, type: 1, subcategories: 1 } },
+              { $project: { _id: 1, name: 1, company: 1, scope: 1, type: 1, subcategories: 1, sortIndex: 1 } },
             ],
             as: "categories",
           },
