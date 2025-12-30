@@ -191,52 +191,8 @@ export class CategoryService {
 
       if (!company) throw CustomError.notFound("Company not found");
 
-      // Estructura final:
-      // { company: { _id, name, group, rfc, categories: [{..., subcategories: [{..., subsubcategories: [...] }]}] } }
       return { company };
-      // const company = Validators.convertToUid(companyId);
-
-      // const categories = await CategoryModel.aggregate([
-      //   // 1) Filtra las categorías de la empresa (y lo que necesites: type, scope, etc.)
-      //   { $match: { company, /* scope: "COMPANY", */ /* type: "INCOME" */ } },
-
-      //   // 2) Subcategorías de cada categoría
-      // { $unwind: "$company" },
-      //   {
-      //     $lookup: {
-      //       from: "subcategories", // 👈 nombre de la COLECCIÓN
-      //       let: { categoryId: "$_id" },
-      //       pipeline: [
-      //         { $match: { $expr: { $eq: ["$parent", "$$categoryId"] } } },
-      //         { $sort: { name: 1 } },
-
-      //         // 3) Subsubcategorías de cada subcategoría
-      //         {
-      //           $lookup: {
-      //             from: "subsubcategories", // 👈 nombre de la COLECCIÓN
-      //             let: { subcategoryId: "$_id" },
-      //             pipeline: [
-      //               { $match: { $expr: { $eq: ["$parent", "$$subcategoryId"] } } },
-      //               { $sort: { name: 1 } },
-      //               { $project: { _id: 1, name: 1, parent: 1, company: 1, scope: 1 } },
-      //             ],
-      //             as: "subsubcategories",
-      //           },
-      //         },
-
-      //         { $project: { _id: 1, name: 1, parent: 1, company: 1, scope: 1, subsubcategories: 1 } },
-      //       ],
-      //       as: "subcategories",
-      //     },
-      //   },
-
-      //   { $sort: { name: 1 } },
-      //   { $project: { _id: 1, name: 1, company: 1, scope: 1, type: 1, subcategories: 1 } },
-      // ])
-      // // si esperas volúmenes grandes:
-      // .allowDiskUse?.(true);
-
-      // return categories;
+      
     } catch (error) {
       console.error("[getCategoriesTree] error:", error);
       throw CustomError.internalServer("Internal Server Error");

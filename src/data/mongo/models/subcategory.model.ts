@@ -24,6 +24,10 @@ const subcategorySchema = new mongoose.Schema({
     ref: 'Company',
     required: true,
   },
+  sortIndex: {
+    type: Number,
+    default: 0,
+  }
 });
 
 subcategorySchema.index({ company: 1, parent: 1, name: 1 }, { unique: true });

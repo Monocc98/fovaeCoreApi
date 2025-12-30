@@ -22,6 +22,10 @@ const categorySchema = new mongoose.Schema({
   type: {
     type: String,
     enum: ['INCOME', 'EXPENSE'],
+  },
+  sortIndex: {
+    type: Number,
+    default: 0,
   }
 
 });
