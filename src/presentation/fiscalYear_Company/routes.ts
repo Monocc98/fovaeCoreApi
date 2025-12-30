@@ -21,6 +21,8 @@ export class FiscalYear_CompanyRoutes {
 
     router.get('/:idCompany', controller.getFiscalYears_CompaniesByCompanyId); //[ AuthMiddleware.validateJWT ]
 
+    router.post('/:idFiscalYearCompanie/lockBudget', controller.lockBudget); //[ AuthMiddleware.validateJWT ]
+
 
 
     return router;

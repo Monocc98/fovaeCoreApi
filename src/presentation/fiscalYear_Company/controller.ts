@@ -50,4 +50,12 @@ export class FiscalYear_CompanyController {
             .catch( error => this.handleError( error, res ) );
         
     }
+
+    lockBudget = async(req: Request, res: Response) => {
+        const idFiscalYearCompanie = req.params.idFiscalYearCompanie;
+
+        this.fiscalYear_CompanyService.lockBudget(idFiscalYearCompanie)
+            .then ( fiscalYear_Company => res.json( fiscalYear_Company ))
+            .catch( error => this.handleError( error, res ) );
+    }
 }

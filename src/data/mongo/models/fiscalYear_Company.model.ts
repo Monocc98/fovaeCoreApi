@@ -11,6 +11,10 @@ const fiscalYear_CompanySchema = new mongoose.Schema({
     ref: 'Company',
     required: [ true, 'companyId is required' ],
   },
+  budgetLocked: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 fiscalYear_CompanySchema.set('toJSON', {
