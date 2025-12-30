@@ -140,7 +140,7 @@ export class CategoryService {
             let: { companyId: "$_id" },
             pipeline: [
               { $match: { $expr: { $eq: ["$company", "$$companyId"] } } },
-              { $sort: { name: 1 } },
+              { $sort: { sortIndex: 1, name: 1 } },
 
               // Subcategories por categoría
               {
@@ -149,7 +149,7 @@ export class CategoryService {
                   let: { categoryId: "$_id" },
                   pipeline: [
                     { $match: { $expr: { $eq: ["$parent", "$$categoryId"] } } },
-                    { $sort: { name: 1 } },
+                    { $sort: { sortIndex: 1, name: 1 } },
 
                     // Subsubcategories por subcategory
                     {
@@ -158,7 +158,7 @@ export class CategoryService {
                         let: { subcategoryId: "$_id" },
                         pipeline: [
                           { $match: { $expr: { $eq: ["$parent", "$$subcategoryId"] } } },
-                          { $sort: { name: 1 } },
+                          { $sort: { sortIndex: 1, name: 1 } },
                           { $project: { _id: 1, name: 1, parent: 1, company: 1, scope: 1, type: 1, sortIndex: 1 } },
                         ],
                         as: "subsubcategories",
