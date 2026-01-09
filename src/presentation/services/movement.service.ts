@@ -196,6 +196,127 @@ export class MovementService {
     }
   }
 
+  async getPendingImportBatchesByAccount(accountId: string) {
+    try {
+      if (!Validators.isMongoID(accountId)) {
+        throw CustomError.badRequest("Invalid accountId");
+      }
+      const accountIdMongo = Validators.convertToUid(accountId);
+
+      const batches = await MovementImportBatchModel.find({
+        account: accountIdMongo,
+        status: "PENDING",
+      })
+        .sort({ createdAt: -1 })
+        .select("_id source status createdAt rows") // rows para calcular conteo
+        .lean();
+
+      // Regresamos una vista ligera (para cards/lista)
+      const result = batches.map((b: any) => ({
+        id: String(b._id),
+        source: b.source,
+        status: b.status,
+        createdAt: b.createdAt,
+        totalRows: Array.isArray(b.rows) ? b.rows.length : 0,
+        // opcional: count de conceptos sin resolver (si quieres, lo calculamos rápido)
+      }));
+
+      return { batches: result };
+    } catch (error) {
+      throw CustomError.internalServer(`${error}`);
+    }
+  }
+
+  async getImportBatchSummary(batchId: string) {
+    try {
+      if (!Validators.isMongoID(batchId)) {
+        throw CustomError.badRequest("Invalid batchId");
+      }
+      const batchIdMongo = Validators.convertToUid(batchId);
+
+      const batch = await MovementImportBatchModel.findById(
+        batchIdMongo
+      ).lean();
+      if (!batch) throw CustomError.notFound("Batch not found");
+
+      // Solo tiene sentido para pendientes (si quieres permitir ver PROCESSED, quita esto)
+      if (batch.status !== "PENDING") {
+        throw CustomError.badRequest("Batch is not pending");
+      }
+
+      const rows = Array.isArray((batch as any).rows)
+        ? (batch as any).rows
+        : [];
+      if (!rows.length) {
+        throw CustomError.badRequest("Batch has no rows");
+      }
+
+      // 1) agrupar por externalConceptKey
+      const conceptosMap = new Map<
+        string,
+        { externalCategoryRaw: string; count: number }
+      >();
+
+      for (const r of rows) {
+        const key = r.externalConceptKey || "SIN_CLAVE";
+        const cur = conceptosMap.get(key);
+        if (!cur) {
+          conceptosMap.set(key, {
+            externalCategoryRaw: r.externalCategoryRaw || "",
+            count: 1,
+          });
+        } else {
+          cur.count += 1;
+        }
+      }
+
+      const conceptKeys = Array.from(conceptosMap.keys());
+
+      // 2) rules existentes (por account + keys)
+      const existingRules = await ConceptRuleModel.find({
+        account: batch.account,
+        externalConceptKey: { $in: conceptKeys },
+      }).lean();
+
+      const rulesByKey = new Map<string, any>();
+      for (const rule of existingRules) {
+        rulesByKey.set(rule.externalConceptKey, rule);
+      }
+
+      // 3) armar concepts como tu import
+      const concepts = conceptKeys.map((key) => {
+        const info = conceptosMap.get(key)!;
+        const rule = rulesByKey.get(key) || null;
+
+        return {
+          externalConceptKey: key,
+          externalCategoryRaw: info.externalCategoryRaw,
+          count: info.count,
+          existingRule: rule
+            ? {
+                id: String(rule._id),
+                subsubcategory: rule.subsubcategory,
+                timesConfirmed: rule.timesConfirmed,
+                timesCorrected: rule.timesCorrected,
+                locked: rule.locked,
+              }
+            : null,
+        };
+      });
+
+      return {
+        importBatchId: String(batch._id),
+        accountId: String(batch.account),
+        source: batch.source,
+        status: batch.status,
+        totalRows: rows.length,
+        concepts,
+      };
+    } catch (error) {
+      throw CustomError.internalServer(`${error}`);
+    }
+  }
+
   // ========== 1) importar archivo y devolver resumen ==========
   async importSolucionFactible(
     dto: ImportSolucionFactibleDto,

@@ -1,130 +1,104 @@
 import { Response, Request } from "express";
-import { CreateMovementDto, CustomError, UpdateMovementDto } from "../../domain";
+import {
+  CreateMovementDto,
+  CustomError,
+  UpdateMovementDto,
+} from "../../domain";
 import { MovementService } from "../services/movement.service";
 import { error } from "console";
 import { ImportSolucionFactibleDto } from "../../domain/dtos/movement/ImportSolucionFactible.dto";
 import { ConfirmSolucionFactibleDto } from "../../domain/dtos/movement/confirmSolucionFactible.dto";
 
-
-
 export class MovementController {
+  // DI
+  constructor(private readonly movementService: MovementService) {}
 
-    // DI
-    constructor (
-        private readonly movementService: MovementService,
-    ) {}
-
-    private handleError = ( error: unknown, res: Response ) => {
-        if ( error instanceof CustomError) {
-            return res.status(error.statusCode).json({ error: error.message });
-        }
-
-        console.log(`${ error }`);
-        
-        return res.status(500).json({ error: 'Internal server error '});
+  private handleError = (error: unknown, res: Response) => {
+    if (error instanceof CustomError) {
+      return res.status(error.statusCode).json({ error: error.message });
     }
 
-    createMovement = async(req: Request, res: Response) => {
+    console.log(`${error}`);
 
-        const [ error, createMovementDto ] = CreateMovementDto.create(req.body);
-        if ( error ) return res.status(400).json({ error })
+    return res.status(500).json({ error: "Internal server error " });
+  };
 
-        this.movementService.createMovement( createMovementDto! )
-            .then( movement => res.status(201).json( movement ) )
-            .catch( error => this.handleError( error, res ) );
+  createMovement = async (req: Request, res: Response) => {
+    const [error, createMovementDto] = CreateMovementDto.create(req.body);
+    if (error) return res.status(400).json({ error });
 
-    }
+    this.movementService
+      .createMovement(createMovementDto!)
+      .then((movement) => res.status(201).json(movement))
+      .catch((error) => this.handleError(error, res));
+  };
 
-    getMovements = async(req: Request, res: Response) => {
+  getMovements = async (req: Request, res: Response) => {
+    this.movementService
+      .getMovements()
+      .then((movements) => res.json(movements))
+      .catch((error) => this.handleError(error, res));
+  };
 
+  getMovementsByAccountId = async (req: Request, res: Response) => {
+    const idAccount = req.params.idAccount;
 
-        this.movementService.getMovements()
-            .then ( movements => res.json( movements ))
-            .catch( error => this.handleError( error, res ) );
-        
-    }
+    this.movementService
+      .getMovementsByAccountId(idAccount)
+      .then((movements) => res.json(movements))
+      .catch((error) => this.handleError(error, res));
+  };
 
-    getMovementsByAccountId = async(req: Request, res: Response) => {
+  getMovementById = async (req: Request, res: Response) => {
+    const idMovement = req.params.idMovement;
 
-        const idAccount = req.params.idAccount
+    this.movementService
+      .getMovementsById(idMovement)
+      .then((movements) => res.json(movements))
+      .catch((error) => this.handleError(error, res));
+  };
 
-        this.movementService.getMovementsByAccountId( idAccount )
-            .then( movements => res.json( movements ))
-            .catch( error => this.handleError( error, res ));
-        
-        
-    }
+  updateMovement = async (req: Request, res: Response) => {
+    const idMovement = req.params.idMovement;
 
-    getMovementById = async(req: Request, res: Response) => {
+    const [error, updateMovement] = UpdateMovementDto.update(req.body);
+    if (error) return res.status(400).json({ error });
 
-        const idMovement = req.params.idMovement;
+    this.movementService
+      .updateMovement(idMovement, updateMovement!)
+      .then((movement) => res.status(201).json(movement))
+      .catch((error) => this.handleError(error, res));
+  };
 
-        this.movementService.getMovementsById( idMovement )
-            .then( movements => res.json( movements ))
-            .catch( error => this.handleError( error, res ));
-        
-        
-    }
+  deleteMovement = async (req: Request, res: Response) => {
+    const idMovement = req.params.idMovement;
 
-    updateMovement = async(req: Request, res: Response) => {
+    this.movementService
+      .deleteMovement(idMovement)
+      .then((movement) => res.status(201).json(movement))
+      .catch((error) => this.handleError(error, res));
+  };
 
-        const idMovement = req.params.idMovement;
+  getPendingImportBatchesByAccount = async (req: Request, res: Response) => {
+    const idAccount = req.params.idAccount;
 
-        const [ error, updateMovement ] = UpdateMovementDto.update(req.body);
-        if ( error ) return res.status(400).json({ error })
+    this.movementService
+      .getPendingImportBatchesByAccount(idAccount)
+      .then((batches) => res.status(201).json(batches))
+      .catch((error) => this.handleError(error, res));
+  };
 
-        this.movementService.updateMovement( idMovement, updateMovement! )
-            .then( movement => res.status(201).json( movement ) )
-            .catch( error => this.handleError( error, res ) );
+  getImportBatchSummary = async (req: Request, res: Response) => {
+    const idBatch = req.params.idBatch;
 
-    }
+    this.movementService
+      .getImportBatchSummary(idBatch)
+      .then((batches) => res.status(201).json(batches))
+      .catch((error) => this.handleError(error, res));
+  };
 
-    deleteMovement = async(req: Request, res: Response) => {
-
-        const idMovement = req.params.idMovement;
-
-
-        this.movementService.deleteMovement( idMovement )
-            .then( movement => res.status(201).json( movement ) )
-            .catch( error => this.handleError( error, res ) );
-
-    }
-
-      // ====== NUEVO: subir archivo Solución Factible ======
-  uploadSolucionFactible = async(req: Request, res: Response) => {
-    try {
-      const [error, dto] = ImportSolucionFactibleDto.create(req.body);
-      if (error) return res.status(400).json({ error });
-
-      if (!req.file) {
-        return res.status(400).json({ error: 'Missing file' });
-      }
-
-      const result = await this.movementService.importSolucionFactible(dto!, req.file);
-      return res.json(result);
-
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-  // ====== NUEVO: confirmar clasificación e insertar movimientos ======
-  confirmSolucionFactible = async(req: Request, res: Response) => {
-    try {
-      const { batchId } = req.params;
-
-      const [error, dto] = ConfirmSolucionFactibleDto.create(req.body);
-      if (error) return res.status(400).json({ error });
-
-      const result = await this.movementService.confirmSolucionFactible(batchId, dto!);
-      return res.json(result);
-
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-    uploadServoEscolar = async (req: Request, res: Response) => {
+  // ====== NUEVO: subir archivo Solución Factible ======
+  uploadSolucionFactible = async (req: Request, res: Response) => {
     try {
       const [error, dto] = ImportSolucionFactibleDto.create(req.body);
       if (error) return res.status(400).json({ error });
@@ -133,13 +107,50 @@ export class MovementController {
         return res.status(400).json({ error: "Missing file" });
       }
 
-      const result = await this.movementService.importServoEscolar(dto!, req.file);
+      const result = await this.movementService.importSolucionFactible(
+        dto!,
+        req.file
+      );
       return res.json(result);
-
     } catch (error) {
       this.handleError(error, res);
     }
   };
-  
-}
 
+  // ====== NUEVO: confirmar clasificación e insertar movimientos ======
+  confirmSolucionFactible = async (req: Request, res: Response) => {
+    try {
+      const { batchId } = req.params;
+
+      const [error, dto] = ConfirmSolucionFactibleDto.create(req.body);
+      if (error) return res.status(400).json({ error });
+
+      const result = await this.movementService.confirmSolucionFactible(
+        batchId,
+        dto!
+      );
+      return res.json(result);
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  };
+
+  uploadServoEscolar = async (req: Request, res: Response) => {
+    try {
+      const [error, dto] = ImportSolucionFactibleDto.create(req.body);
+      if (error) return res.status(400).json({ error });
+
+      if (!req.file) {
+        return res.status(400).json({ error: "Missing file" });
+      }
+
+      const result = await this.movementService.importServoEscolar(
+        dto!,
+        req.file
+      );
+      return res.json(result);
+    } catch (error) {
+      this.handleError(error, res);
+    }
+  };
+}
