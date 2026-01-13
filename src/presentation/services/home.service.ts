@@ -1,159 +1,325 @@
+// import { Validators } from "../../config";
+// import { MembershipModel } from "../../data";
+// import { CustomError } from "../../domain";
+
+
+// export class HomeService {
+    
+//     // DI
+//     constructor () {}
+
+//     async getHomeOverview( userId: string ) {
+//         const uid = Validators.convertToUid(userId);
+
+//         // console.log(uid);
+        
+
+//         try {
+
+//             const [overview] = await MembershipModel.aggregate([
+//                 { $match: { user: uid /*, status: 'active'*/ } },
+
+//                 { $lookup: {
+//                     from: 'companies',
+//                     localField: 'company',
+//                     foreignField: '_id',
+//                     as: 'company',
+//                 }},
+//                 { $unwind: '$company' },
+
+//                 { $lookup: {
+//                     from: 'groups',
+//                     localField: 'company.group',
+//                     foreignField: '_id',
+//                     as: 'group',
+//                 }},
+//                 { $unwind: '$group' },
+
+//                 // 🔹 NEW: traer las cuentas de la company + su balance
+//                 {
+//                 $lookup: {
+//                     from: 'accounts',
+//                     let: { companyId: '$company._id' },
+//                     pipeline: [
+//                     // Asegúrate que el campo en Account sea 'company'
+//                     { $match: { $expr: { $eq: ['$company', '$$companyId'] } } },
+
+//                     // balance por _id (mismo _id en account_balances)
+//                     {
+//                         $lookup: {
+//                         from: 'accountbalances',
+//                         localField: '_id',
+//                         foreignField: '_id',
+//                         as: 'balanceDoc',
+//                         },
+//                     },
+
+//                     // balance como Number (dejaste number en el modelo)
+//                     {
+//                         $addFields: {
+//                             balance: {
+//                                 $toDouble: { $ifNull: [ { $arrayElemAt: ['$balanceDoc.balance', 0] }, 0 ] }
+//                             }
+//                         }
+//                     },
+
+//                     // proyecta SOLO lo que quieras devolver
+//                     {
+//                         $project: {
+//                         _id: 1,
+//                         name: 1,          // ajusta a tus campos reales del Account
+//                         type: 1,          // si no existe en tu esquema, bórralo
+//                         balance: 1
+//                         }
+//                     },
+//                     ],
+//                     as: 'companyAccounts',
+//                 }
+//                 },
+//                 {
+//                     $addFields: {
+//                         companyTotal: {
+//                         $sum: {
+//                             $map: {
+//                             input: { $ifNull: ['$companyAccounts', []] }, // evita null si no hay cuentas
+//                             as: 'acc',
+//                             in: { $ifNull: ['$$acc.balance', 0] }          // suma el number que ya calculaste
+//                             }
+//                         }
+//                         }
+//                     }
+//                     },
+//                 { $lookup: {
+//                     from: 'users',
+//                     localField: 'user',
+//                     foreignField: '_id',
+//                     as: 'userDoc',
+//                 }},
+//                 { $unwind: '$userDoc' },
+
+//                 // 🔧 CHANGE: ahora companies incluye también las accounts
+//                 {
+//                 $group: {
+//                     _id: '$group._id',
+//                     groupName: { $first: '$group.name' },
+//                     companies: {
+//                     $addToSet: {
+//                         _id: '$company._id',
+//                         name: '$company.name',
+//                         accounts: '$companyAccounts', // << aquí viajan las cuentas
+//                         balance: '$companyTotal' // ⬅️ aquí va el total dentro de compa
+//                     }
+//                     },
+//                     userDoc: {
+//                     $first: { _id: '$userDoc._id', name: '$userDoc.name', email: '$userDoc.email' },
+//                     },
+//                 }
+//                 },
+//                 // 5.1) ⬇️ NEW: total del grupo sumando los totals de sus companies
+// {
+//                 $addFields: {
+//                     groupbalance: {
+//                     $sum: {
+//                         $map: {
+//                         input: { $ifNull: ['$companies', []] },
+//                         as: 'comp',
+//                         in: { $ifNull: ['$$comp.balance', 0] }
+//                         }
+//                     }
+//                     }
+//                 }
+//                 },
+
+                
+
+//                 {
+//                 $group: {
+//                     _id: '$userDoc._id',
+//                     user: { $first: '$userDoc' },
+//                     groups: {
+//                     $push: { _id: '$_id', name: '$groupName', balance: '$groupbalance', companies: '$companies' },
+//                     },
+//                 }
+//                 },
+
+//                 { $project: { _id: 0, user: 1, groups: 1 } },
+//             ]);
+            
+
+//             return overview ?? { user: null, groups: [] };
+            
+//         } catch (error) {
+//             console.log(error);
+            
+//             throw CustomError.internalServer('Internal Server Error');
+//         }
+
+//     }
+
+// }
 import { Validators } from "../../config";
 import { MembershipModel } from "../../data";
 import { CustomError } from "../../domain";
 
-
 export class HomeService {
-    
-    // DI
-    constructor () {}
+  constructor() {}
 
-    async getHomeOverview( userId: string ) {
-        const uid = Validators.convertToUid(userId);
+  async getHomeOverview(userId: string) {
+    const uid = Validators.convertToUid(userId);
 
-        // console.log(uid);
-        
+    try {
+      const [overview] = await MembershipModel.aggregate([
+        { $match: { user: uid } },
 
-        try {
+        { $lookup: {
+          from: "companies",
+          localField: "company",
+          foreignField: "_id",
+          as: "company",
+        }},
+        { $unwind: "$company" },
 
-            const [overview] = await MembershipModel.aggregate([
-                { $match: { user: uid /*, status: 'active'*/ } },
+        { $lookup: {
+          from: "groups",
+          localField: "company.group",
+          foreignField: "_id",
+          as: "group",
+        }},
+        { $unwind: "$group" },
 
-                { $lookup: {
-                    from: 'companies',
-                    localField: 'company',
-                    foreignField: '_id',
-                    as: 'company',
-                }},
-                { $unwind: '$company' },
+        // ✅ Traer cuentas de la company + balance calculado desde movements
+        {
+          $lookup: {
+            from: "accounts",
+            let: { companyId: "$company._id" },
+            pipeline: [
+              { $match: { $expr: { $eq: ["$company", "$$companyId"] } } },
 
-                { $lookup: {
-                    from: 'groups',
-                    localField: 'company.group',
-                    foreignField: '_id',
-                    as: 'group',
-                }},
-                { $unwind: '$group' },
-
-                // 🔹 NEW: traer las cuentas de la company + su balance
-                {
+              // ✅ balance por cuenta = SUM(movements.amount)
+              {
                 $lookup: {
-                    from: 'accounts',
-                    let: { companyId: '$company._id' },
-                    pipeline: [
-                    // Asegúrate que el campo en Account sea 'company'
-                    { $match: { $expr: { $eq: ['$company', '$$companyId'] } } },
-
-                    // balance por _id (mismo _id en account_balances)
-                    {
-                        $lookup: {
-                        from: 'accountbalances',
-                        localField: '_id',
-                        foreignField: '_id',
-                        as: 'balanceDoc',
-                        },
-                    },
-
-                    // balance como Number (dejaste number en el modelo)
-                    {
-                        $addFields: {
-                            balance: {
-                                $toDouble: { $ifNull: [ { $arrayElemAt: ['$balanceDoc.balance', 0] }, 0 ] }
-                            }
-                        }
-                    },
-
-                    // proyecta SOLO lo que quieras devolver
-                    {
-                        $project: {
-                        _id: 1,
-                        name: 1,          // ajusta a tus campos reales del Account
-                        type: 1,          // si no existe en tu esquema, bórralo
-                        balance: 1
-                        }
-                    },
-                    ],
-                    as: 'companyAccounts',
-                }
+                  from: "movements",
+                  let: { accountId: "$_id" },
+                  pipeline: [
+                    { $match: { $expr: { $eq: ["$account", "$$accountId"] } } },
+                    { $group: { _id: null, balance: { $sum: "$amount" } } },
+                  ],
+                  as: "balanceDoc",
                 },
-                {
-                    $addFields: {
-                        companyTotal: {
-                        $sum: {
-                            $map: {
-                            input: { $ifNull: ['$companyAccounts', []] }, // evita null si no hay cuentas
-                            as: 'acc',
-                            in: { $ifNull: ['$$acc.balance', 0] }          // suma el number que ya calculaste
-                            }
-                        }
-                        }
-                    }
-                    },
-                { $lookup: {
-                    from: 'users',
-                    localField: 'user',
-                    foreignField: '_id',
-                    as: 'userDoc',
-                }},
-                { $unwind: '$userDoc' },
+              },
 
-                // 🔧 CHANGE: ahora companies incluye también las accounts
-                {
-                $group: {
-                    _id: '$group._id',
-                    groupName: { $first: '$group.name' },
-                    companies: {
-                    $addToSet: {
-                        _id: '$company._id',
-                        name: '$company.name',
-                        accounts: '$companyAccounts', // << aquí viajan las cuentas
-                        balance: '$companyTotal' // ⬅️ aquí va el total dentro de compa
-                    }
-                    },
-                    userDoc: {
-                    $first: { _id: '$userDoc._id', name: '$userDoc.name', email: '$userDoc.email' },
-                    },
-                }
-                },
-                // 5.1) ⬇️ NEW: total del grupo sumando los totals de sus companies
-{
+              // ✅ balance como número plano
+              {
                 $addFields: {
-                    groupbalance: {
-                    $sum: {
-                        $map: {
-                        input: { $ifNull: ['$companies', []] },
-                        as: 'comp',
-                        in: { $ifNull: ['$$comp.balance', 0] }
-                        }
-                    }
-                    }
-                }
-                },
-
-                
-
-                {
-                $group: {
-                    _id: '$userDoc._id',
-                    user: { $first: '$userDoc' },
-                    groups: {
-                    $push: { _id: '$_id', name: '$groupName', balance: '$groupbalance', companies: '$companies' },
+                  balance: {
+                    $toDouble: {
+                      $ifNull: [{ $arrayElemAt: ["$balanceDoc.balance", 0] }, 0],
                     },
-                }
+                  },
                 },
+              },
 
-                { $project: { _id: 0, user: 1, groups: 1 } },
-            ]);
-            
+              // ✅ opcional: quitar el arreglo balanceDoc
+              { $unset: "balanceDoc" },
 
-            return overview ?? { user: null, groups: [] };
-            
-        } catch (error) {
-            console.log(error);
-            
-            throw CustomError.internalServer('Internal Server Error');
-        }
+              // ✅ devuelve lo mínimo
+              {
+                $project: {
+                  _id: 1,
+                  name: 1,
+                  type: 1,      // borra si no existe
+                  balance: 1,
+                },
+              },
+            ],
+            as: "companyAccounts",
+          },
+        },
 
+        // ✅ total de la company sumando balances de sus accounts
+        {
+          $addFields: {
+            companyTotal: {
+              $sum: {
+                $map: {
+                  input: { $ifNull: ["$companyAccounts", []] },
+                  as: "acc",
+                  in: { $ifNull: ["$$acc.balance", 0] },
+                },
+              },
+            },
+          },
+        },
+
+        { $lookup: {
+          from: "users",
+          localField: "user",
+          foreignField: "_id",
+          as: "userDoc",
+        }},
+        { $unwind: "$userDoc" },
+
+        // agrupar por grupo: companies con accounts ya incluidas
+        {
+          $group: {
+            _id: "$group._id",
+            groupName: { $first: "$group.name" },
+            companies: {
+              $addToSet: {
+                _id: "$company._id",
+                name: "$company.name",
+                accounts: "$companyAccounts",
+                balance: "$companyTotal",
+              },
+            },
+            userDoc: {
+              $first: {
+                _id: "$userDoc._id",
+                name: "$userDoc.name",
+                email: "$userDoc.email",
+              },
+            },
+          },
+        },
+
+        // ✅ total del grupo sumando balances de sus companies
+        {
+          $addFields: {
+            groupbalance: {
+              $sum: {
+                $map: {
+                  input: { $ifNull: ["$companies", []] },
+                  as: "comp",
+                  in: { $ifNull: ["$$comp.balance", 0] },
+                },
+              },
+            },
+          },
+        },
+
+        // agrupar por usuario final
+        {
+          $group: {
+            _id: "$userDoc._id",
+            user: { $first: "$userDoc" },
+            groups: {
+              $push: {
+                _id: "$_id",
+                name: "$groupName",
+                balance: "$groupbalance",
+                companies: "$companies",
+              },
+            },
+          },
+        },
+
+        { $project: { _id: 0, user: 1, groups: 1 } },
+      ]);
+
+      return overview ?? { user: null, groups: [] };
+    } catch (error) {
+      console.log(error);
+      throw CustomError.internalServer("Internal Server Error");
     }
-
+  }
 }
