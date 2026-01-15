@@ -171,23 +171,27 @@ export class HomeService {
       const [overview] = await MembershipModel.aggregate([
         { $match: { user: uid } },
 
-        { $lookup: {
-          from: "companies",
-          localField: "company",
-          foreignField: "_id",
-          as: "company",
-        }},
+        {
+          $lookup: {
+            from: "companies",
+            localField: "company",
+            foreignField: "_id",
+            as: "company",
+          },
+        },
         { $unwind: "$company" },
 
-        { $lookup: {
-          from: "groups",
-          localField: "company.group",
-          foreignField: "_id",
-          as: "group",
-        }},
+        {
+          $lookup: {
+            from: "groups",
+            localField: "company.group",
+            foreignField: "_id",
+            as: "group",
+          },
+        },
         { $unwind: "$group" },
 
-        // ✅ Traer cuentas de la company + balance calculado desde movements
+        // ✅ Traer cuentas de la company + totals calculados desde movements
         {
           $lookup: {
             from: "accounts",
@@ -195,40 +199,75 @@ export class HomeService {
             pipeline: [
               { $match: { $expr: { $eq: ["$company", "$$companyId"] } } },
 
-              // ✅ balance por cuenta = SUM(movements.amount)
+              // ✅ totals por cuenta = SUM / ingresos / egresos
               {
                 $lookup: {
                   from: "movements",
                   let: { accountId: "$_id" },
                   pipeline: [
                     { $match: { $expr: { $eq: ["$account", "$$accountId"] } } },
-                    { $group: { _id: null, balance: { $sum: "$amount" } } },
+                    {
+                      $group: {
+                        _id: null,
+                        balance: { $sum: "$amount" },
+                        ingresos: {
+                          $sum: {
+                            $cond: [{ $gt: ["$amount", 0] }, "$amount", 0],
+                          },
+                        },
+                        egresos: {
+                          $sum: {
+                            $cond: [
+                              { $lt: ["$amount", 0] },
+                              { $abs: "$amount" },
+                              0,
+                            ],
+                          },
+                        },
+                      },
+                    },
                   ],
-                  as: "balanceDoc",
+                  as: "totalsDoc",
                 },
               },
 
-              // ✅ balance como número plano
+              // ✅ flatten + number
               {
                 $addFields: {
                   balance: {
                     $toDouble: {
-                      $ifNull: [{ $arrayElemAt: ["$balanceDoc.balance", 0] }, 0],
+                      $ifNull: [{ $arrayElemAt: ["$totalsDoc.balance", 0] }, 0],
+                    },
+                  },
+                  ingresos: {
+                    $toDouble: {
+                      $ifNull: [
+                        { $arrayElemAt: ["$totalsDoc.ingresos", 0] },
+                        0,
+                      ],
+                    },
+                  },
+                  egresos: {
+                    $toDouble: {
+                      $ifNull: [
+                        { $arrayElemAt: ["$totalsDoc.egresos", 0] },
+                        0,
+                      ],
                     },
                   },
                 },
               },
 
-              // ✅ opcional: quitar el arreglo balanceDoc
-              { $unset: "balanceDoc" },
+              { $unset: "totalsDoc" },
 
-              // ✅ devuelve lo mínimo
               {
                 $project: {
                   _id: 1,
                   name: 1,
-                  type: 1,      // borra si no existe
+                  type: 1, // borra si no existe
                   balance: 1,
+                  ingresos: 1,
+                  egresos: 1,
                 },
               },
             ],
@@ -236,7 +275,7 @@ export class HomeService {
           },
         },
 
-        // ✅ total de la company sumando balances de sus accounts
+        // ✅ total de la company sumando cuentas
         {
           $addFields: {
             companyTotal: {
@@ -248,18 +287,38 @@ export class HomeService {
                 },
               },
             },
+            companyIngresos: {
+              $sum: {
+                $map: {
+                  input: { $ifNull: ["$companyAccounts", []] },
+                  as: "acc",
+                  in: { $ifNull: ["$$acc.ingresos", 0] },
+                },
+              },
+            },
+            companyEgresos: {
+              $sum: {
+                $map: {
+                  input: { $ifNull: ["$companyAccounts", []] },
+                  as: "acc",
+                  in: { $ifNull: ["$$acc.egresos", 0] },
+                },
+              },
+            },
           },
         },
 
-        { $lookup: {
-          from: "users",
-          localField: "user",
-          foreignField: "_id",
-          as: "userDoc",
-        }},
+        {
+          $lookup: {
+            from: "users",
+            localField: "user",
+            foreignField: "_id",
+            as: "userDoc",
+          },
+        },
         { $unwind: "$userDoc" },
 
-        // agrupar por grupo: companies con accounts ya incluidas
+        // ✅ agrupar por grupo: companies con accounts ya incluidas
         {
           $group: {
             _id: "$group._id",
@@ -270,6 +329,8 @@ export class HomeService {
                 name: "$company.name",
                 accounts: "$companyAccounts",
                 balance: "$companyTotal",
+                ingresos: "$companyIngresos",
+                egresos: "$companyEgresos",
               },
             },
             userDoc: {
@@ -282,7 +343,7 @@ export class HomeService {
           },
         },
 
-        // ✅ total del grupo sumando balances de sus companies
+        // ✅ totales del grupo sumando companies
         {
           $addFields: {
             groupbalance: {
@@ -294,10 +355,28 @@ export class HomeService {
                 },
               },
             },
+            groupIngresos: {
+              $sum: {
+                $map: {
+                  input: { $ifNull: ["$companies", []] },
+                  as: "comp",
+                  in: { $ifNull: ["$$comp.ingresos", 0] },
+                },
+              },
+            },
+            groupEgresos: {
+              $sum: {
+                $map: {
+                  input: { $ifNull: ["$companies", []] },
+                  as: "comp",
+                  in: { $ifNull: ["$$comp.egresos", 0] },
+                },
+              },
+            },
           },
         },
 
-        // agrupar por usuario final
+        // ✅ agrupar por usuario final
         {
           $group: {
             _id: "$userDoc._id",
@@ -307,6 +386,8 @@ export class HomeService {
                 _id: "$_id",
                 name: "$groupName",
                 balance: "$groupbalance",
+                ingresos: "$groupIngresos",
+                egresos: "$groupEgresos",
                 companies: "$companies",
               },
             },
