@@ -403,4 +403,312 @@ export class HomeService {
       throw CustomError.internalServer("Internal Server Error");
     }
   }
+
+  async getCompanyBudgetVsActual(userId: string) {
+    const uid = Validators.convertToUid(userId);
+
+    try {
+      const [overview] = await MembershipModel.aggregate([
+        { $match: { user: uid } },
+
+        // company
+        {
+          $lookup: {
+            from: "companies",
+            localField: "company",
+            foreignField: "_id",
+            as: "company",
+          },
+        },
+        { $unwind: "$company" },
+
+        // group
+        {
+          $lookup: {
+            from: "groups",
+            localField: "company.group",
+            foreignField: "_id",
+            as: "group",
+          },
+        },
+        { $unwind: "$group" },
+
+        // ===== FY ACTIVE LINK (FiscalYear_Company) =====
+        {
+          $lookup: {
+            from: "fiscalyear_companies", // 🔧 ajusta al nombre REAL de tu colección
+            let: { companyId: "$company._id" },
+            pipeline: [
+              { $match: { $expr: { $eq: ["$company", "$$companyId"] } } },
+
+              // 🔧 ajusta esto a tu lógica de "activo"
+              // si tienes active:true:
+              { $match: { active: true } },
+
+              {
+                $lookup: {
+                  from: "fiscalyears",
+                  localField: "fiscalYear",
+                  foreignField: "_id",
+                  as: "fiscalYear",
+                },
+              },
+              { $unwind: "$fiscalYear" },
+
+              // start/end fechas
+              {
+                $addFields: {
+                  fyStart: "$fiscalYear.startDate",
+                  fyEnd: {
+                    $ifNull: [
+                      "$fiscalYear.endDate",
+                      {
+                        // si no hay endDate: start + 12 meses
+                        $dateAdd: {
+                          startDate: "$fiscalYear.startDate",
+                          unit: "month",
+                          amount: 12,
+                        },
+                      },
+                    ],
+                  },
+                  startMonth: { $add: [{ $month: "$fiscalYear.startDate" }, 0] }, // 1..12
+                  startYear: { $year: "$fiscalYear.startDate" },
+                },
+              },
+
+              {
+                $project: {
+                  _id: 1,
+                  budgetLocked: 1,
+                  fyStart: 1,
+                  fyEnd: 1,
+                  startMonth: 1,
+                  startYear: 1,
+                  fiscalYear: {
+                    _id: "$fiscalYear._id",
+                    name: "$fiscalYear.name",
+                    startDate: "$fiscalYear.startDate",
+                    endDate: "$fiscalYear.endDate",
+                  },
+                },
+              },
+            ],
+            as: "fyLink",
+          },
+        },
+        {
+          $addFields: {
+            fyLink: { $arrayElemAt: ["$fyLink", 0] }, // puede ser null si no hay FY activo
+          },
+        },
+
+        // ===== accounts de la company (para sumar movements) =====
+        {
+          $lookup: {
+            from: "accounts",
+            let: { companyId: "$company._id" },
+            pipeline: [
+              { $match: { $expr: { $eq: ["$company", "$$companyId"] } } },
+              { $project: { _id: 1 } },
+            ],
+            as: "accountsMini",
+          },
+        },
+        {
+          $addFields: {
+            accountIds: {
+              $map: {
+                input: { $ifNull: ["$accountsMini", []] },
+                as: "a",
+                in: "$$a._id",
+              },
+            },
+          },
+        },
+
+        // ===== actual mensual desde movements =====
+        {
+          $lookup: {
+            from: "movements",
+            let: {
+              accountIds: "$accountIds",
+              fyStart: "$fyLink.fyStart",
+              fyEnd: "$fyLink.fyEnd",
+            },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $in: ["$account", "$$accountIds"] },
+                      { $gte: ["$occurredAt", "$$fyStart"] },
+                      { $lt: ["$occurredAt", "$$fyEnd"] },
+                    ],
+                  },
+                },
+              },
+              {
+                $group: {
+                  _id: { y: { $year: "$occurredAt" }, m: { $month: "$occurredAt" } },
+                  actual: { $sum: "$amount" }, // ✅ neto (negativos abajo de 0)
+                },
+              },
+            ],
+            as: "actualByMonth",
+          },
+        },
+
+        // ===== budget mensual desde budgets =====
+        {
+          $lookup: {
+            from: "budgets",
+            let: { companyId: "$company._id" },
+            pipeline: [
+              { $match: { $expr: { $eq: ["$company", "$$companyId"] } } },
+              {
+                $group: {
+                  _id: { y: "$year", m: "$month" },
+                  budget: { $sum: "$amount" },
+                },
+              },
+            ],
+            as: "budgetByMonth",
+          },
+        },
+
+        // ===== construir 12 meses fiscales con map =====
+        {
+          $addFields: {
+            budgetVsActual: {
+              $cond: [
+                { $ifNull: ["$fyLink", false] },
+                {
+                  $map: {
+                    input: { $range: [0, 12] }, // 0..11
+                    as: "i",
+                    in: {
+                      $let: {
+                        vars: {
+                          calMonth: {
+                            $add: [
+                              1,
+                              {
+                                $mod: [
+                                  { $add: [{ $subtract: ["$fyLink.startMonth", 1] }, "$$i"] },
+                                  12,
+                                ],
+                              },
+                            ],
+                          },
+                        },
+                        in: {
+                          $let: {
+                            vars: {
+                              year: {
+                                $add: [
+                                  "$fyLink.startYear",
+                                  {
+                                    $cond: [{ $lt: ["$$calMonth", "$fyLink.startMonth"] }, 1, 0],
+                                  },
+                                ],
+                              },
+                              bObj: {
+                                $arrayElemAt: [
+                                  {
+                                    $filter: {
+                                      input: "$budgetByMonth",
+                                      as: "b",
+                                      cond: {
+                                        $and: [
+                                          { $eq: ["$$b._id.y", {
+                                            $add: [
+                                              "$fyLink.startYear",
+                                              { $cond: [{ $lt: ["$$calMonth", "$fyLink.startMonth"] }, 1, 0] },
+                                            ],
+                                          }]},
+                                          { $eq: ["$$b._id.m", "$$calMonth"] },
+                                        ],
+                                      },
+                                    },
+                                  },
+                                  0,
+                                ],
+                              },
+                              aObj: {
+                                $arrayElemAt: [
+                                  {
+                                    $filter: {
+                                      input: "$actualByMonth",
+                                      as: "a",
+                                      cond: {
+                                        $and: [
+                                          { $eq: ["$$a._id.y", {
+                                            $add: [
+                                              "$fyLink.startYear",
+                                              { $cond: [{ $lt: ["$$calMonth", "$fyLink.startMonth"] }, 1, 0] },
+                                            ],
+                                          }]},
+                                          { $eq: ["$$a._id.m", "$$calMonth"] },
+                                        ],
+                                      },
+                                    },
+                                  },
+                                  0,
+                                ],
+                              },
+                            },
+                            in: {
+                              fiscalPos: { $add: ["$$i", 1] },
+                              calMonth: "$$calMonth",
+                              year: "$$year",
+                              budget: { $ifNull: ["$$bObj.budget", 0] },
+                              actual: { $ifNull: ["$$aObj.actual", 0] },
+                              diff: {
+                                $subtract: [
+                                  { $ifNull: ["$$aObj.actual", 0] },
+                                  { $ifNull: ["$$bObj.budget", 0] },
+                                ],
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+                [], // si no hay FY activo
+              ],
+            },
+            budgetLocked: { $ifNull: ["$fyLink.budgetLocked", false] },
+          },
+        },
+
+        // ===== agrupar a estructura tipo homeoverview =====
+        {
+          $group: {
+            _id: "$group._id",
+            groupName: { $first: "$group.name" },
+            companies: {
+              $addToSet: {
+                _id: "$company._id",
+                name: "$company.name",
+                fiscalYear: "$fyLink.fiscalYear",
+                budgetLocked: "$budgetLocked",
+                budgetVsActual: "$budgetVsActual",
+              },
+            },
+          },
+        },
+
+        { $project: { _id: 1, name: "$groupName", companies: 1 } },
+      ]);
+
+      return overview ?? { groups: [] };
+    } catch (error) {
+      console.log(error);
+      throw CustomError.internalServer("Internal Server Error");
+    }
+  }
+
 }

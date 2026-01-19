@@ -34,4 +34,19 @@ export class HomeController {
             .catch( error => this.handleError( error, res ) );
         
     }
+
+    getCompanyBudgetVsActual = async(req: Request, res: Response) => {
+
+        const user = (req as any).user;
+        if (!user?.id) {
+            return res.status(401).json({ error: 'User not authenticated' });
+        }
+
+        await this.homeService.getCompanyBudgetVsActual(user.id)
+            .then ( overview => res.json( overview ))
+            .catch( error => this.handleError( error, res ) );
+        
+    }
+
+
 }
