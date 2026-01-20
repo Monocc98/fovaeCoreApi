@@ -160,241 +160,353 @@ export class HomeService {
   constructor() {}
 
   async getHomeOverview(userId: string) {
-    const uid = Validators.convertToUid(userId);
+  const uid = Validators.convertToUid(userId);
 
-    try {
-      const [overview] = await MembershipModel.aggregate([
-        { $match: { user: uid } },
+  try {
+    const [overview] = await MembershipModel.aggregate([
+      { $match: { user: uid } },
 
-        {
-          $lookup: {
-            from: "companies",
-            localField: "company",
-            foreignField: "_id",
-            as: "company",
-          },
+      {
+        $lookup: {
+          from: "companies",
+          localField: "company",
+          foreignField: "_id",
+          as: "company",
         },
-        { $unwind: "$company" },
+      },
+      { $unwind: "$company" },
 
-        {
-          $lookup: {
-            from: "groups",
-            localField: "company.group",
-            foreignField: "_id",
-            as: "group",
-          },
+      {
+        $lookup: {
+          from: "groups",
+          localField: "company.group",
+          foreignField: "_id",
+          as: "group",
         },
-        { $unwind: "$group" },
+      },
+      { $unwind: "$group" },
 
-        // ✅ Traer cuentas de la company + totals calculados desde movements
-        {
-          $lookup: {
-            from: "accounts",
-            let: { companyId: "$company._id" },
-            pipeline: [
-              { $match: { $expr: { $eq: ["$company", "$$companyId"] } } },
+      // ============================================================
+      // ✅ FY "EN CURSO" POR COMPANY (pivot fiscalyear_companies)
+      // ============================================================
+      {
+        $lookup: {
+          from: "fiscalyear_companies", // 👈 AJUSTA si tu colección se llama diferente
+          let: { companyId: "$company._id", now: "$$NOW" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$company", "$$companyId"] } } },
 
-              // ✅ totals por cuenta = SUM / ingresos / egresos
-              {
-                $lookup: {
-                  from: "movements",
-                  let: { accountId: "$_id" },
-                  pipeline: [
-                    { $match: { $expr: { $eq: ["$account", "$$accountId"] } } },
+            // populate fy
+            {
+              $lookup: {
+                from: "fiscalyears",
+                localField: "fiscalYear",
+                foreignField: "_id",
+                as: "fy",
+              },
+            },
+            { $addFields: { fy: { $arrayElemAt: ["$fy", 0] } } },
+
+            // fyEnd fallback = start + 12 meses
+            {
+              $addFields: {
+                fyEnd: {
+                  $ifNull: [
+                    "$fy.endDate",
                     {
-                      $group: {
-                        _id: null,
-                        balance: { $sum: "$amount" },
-                        ingresos: {
-                          $sum: {
-                            $cond: [{ $gt: ["$amount", 0] }, "$amount", 0],
-                          },
-                        },
-                        egresos: {
-                          $sum: {
-                            $cond: [
-                              { $lt: ["$amount", 0] },
-                              { $abs: "$amount" },
-                              0,
-                            ],
-                          },
-                        },
+                      $dateAdd: {
+                        startDate: "$fy.startDate",
+                        unit: "month",
+                        amount: 12,
                       },
                     },
                   ],
-                  as: "totalsDoc",
                 },
               },
+            },
 
-              // ✅ flatten + number
-              {
-                $addFields: {
-                  balance: {
-                    $toDouble: {
-                      $ifNull: [{ $arrayElemAt: ["$totalsDoc.balance", 0] }, 0],
+            // ✅ solo el FY que contiene "hoy"
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $lte: ["$fy.startDate", "$$now"] },
+                    { $gt: ["$fyEnd", "$$now"] },
+                  ],
+                },
+              },
+            },
+
+            { $sort: { "fy.startDate": -1 } },
+            { $limit: 1 },
+
+            {
+              $project: {
+                _id: 1,
+                fiscalYear: "$fy",
+                fyEnd: 1,
+              },
+            },
+          ],
+          as: "fyLink",
+        },
+      },
+      { $addFields: { fyLink: { $arrayElemAt: ["$fyLink", 0] } } },
+
+      // FY derivado (si no hay FY en curso, queda null)
+      {
+        $addFields: {
+          fy: "$fyLink.fiscalYear",
+          fyStart: "$fyLink.fiscalYear.startDate",
+          fyEnd: "$fyLink.fyEnd",
+        },
+      },
+
+      // ============================================================
+      // ✅ Traer cuentas + totals (movements filtrados por FY)
+      // ============================================================
+      {
+        $lookup: {
+          from: "accounts",
+          let: {
+            companyId: "$company._id",
+            fyStart: "$fyStart",
+            fyEnd: "$fyEnd",
+          },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$company", "$$companyId"] } } },
+
+            // totals por cuenta = SUM / ingresos / egresos (FILTRADOS POR FY)
+            {
+              $lookup: {
+                from: "movements",
+                let: {
+                  accountId: "$_id",
+                  fyStart: "$$fyStart",
+                  fyEnd: "$$fyEnd",
+                },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ["$account", "$$accountId"] },
+
+                          // ✅ si hay FY, filtra por rango; si no hay FY, NO filtra por fecha
+                          {
+                            $or: [
+                              { $eq: ["$$fyStart", null] },
+                              {
+                                $and: [
+                                  { $gte: ["$occurredAt", "$$fyStart"] },
+                                  { $lt: ["$occurredAt", "$$fyEnd"] },
+                                ],
+                              },
+                            ],
+                          },
+                        ],
+                      },
                     },
                   },
-                  ingresos: {
-                    $toDouble: {
-                      $ifNull: [
-                        { $arrayElemAt: ["$totalsDoc.ingresos", 0] },
-                        0,
-                      ],
+                  {
+                    $group: {
+                      _id: null,
+                      balance: { $sum: "$amount" },
+                      ingresos: {
+                        $sum: {
+                          $cond: [{ $gt: ["$amount", 0] }, "$amount", 0],
+                        },
+                      },
+                      egresos: {
+                        $sum: {
+                          $cond: [
+                            { $lt: ["$amount", 0] },
+                            { $abs: "$amount" },
+                            0,
+                          ],
+                        },
+                      },
                     },
                   },
-                  egresos: {
-                    $toDouble: {
-                      $ifNull: [{ $arrayElemAt: ["$totalsDoc.egresos", 0] }, 0],
-                    },
+                ],
+                as: "totalsDoc",
+              },
+            },
+
+            // flatten + number
+            {
+              $addFields: {
+                balance: {
+                  $toDouble: {
+                    $ifNull: [{ $arrayElemAt: ["$totalsDoc.balance", 0] }, 0],
+                  },
+                },
+                ingresos: {
+                  $toDouble: {
+                    $ifNull: [{ $arrayElemAt: ["$totalsDoc.ingresos", 0] }, 0],
+                  },
+                },
+                egresos: {
+                  $toDouble: {
+                    $ifNull: [{ $arrayElemAt: ["$totalsDoc.egresos", 0] }, 0],
                   },
                 },
               },
+            },
 
-              { $unset: "totalsDoc" },
+            { $unset: "totalsDoc" },
 
-              {
-                $project: {
-                  _id: 1,
-                  name: 1,
-                  type: 1, // borra si no existe
-                  balance: 1,
-                  ingresos: 1,
-                  egresos: 1,
-                },
+            {
+              $project: {
+                _id: 1,
+                name: 1,
+                type: 1, // borra si no existe
+                balance: 1,
+                ingresos: 1,
+                egresos: 1,
               },
-            ],
-            as: "companyAccounts",
-          },
+            },
+          ],
+          as: "companyAccounts",
         },
+      },
 
-        // ✅ total de la company sumando cuentas
-        {
-          $addFields: {
-            companyTotal: {
-              $sum: {
-                $map: {
-                  input: { $ifNull: ["$companyAccounts", []] },
-                  as: "acc",
-                  in: { $ifNull: ["$$acc.balance", 0] },
-                },
-              },
-            },
-            companyIngresos: {
-              $sum: {
-                $map: {
-                  input: { $ifNull: ["$companyAccounts", []] },
-                  as: "acc",
-                  in: { $ifNull: ["$$acc.ingresos", 0] },
-                },
-              },
-            },
-            companyEgresos: {
-              $sum: {
-                $map: {
-                  input: { $ifNull: ["$companyAccounts", []] },
-                  as: "acc",
-                  in: { $ifNull: ["$$acc.egresos", 0] },
-                },
+      // total company sumando cuentas
+      {
+        $addFields: {
+          companyTotal: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companyAccounts", []] },
+                as: "acc",
+                in: { $ifNull: ["$$acc.balance", 0] },
               },
             },
           },
-        },
-
-        {
-          $lookup: {
-            from: "users",
-            localField: "user",
-            foreignField: "_id",
-            as: "userDoc",
-          },
-        },
-        { $unwind: "$userDoc" },
-
-        // ✅ agrupar por grupo: companies con accounts ya incluidas
-        {
-          $group: {
-            _id: "$group._id",
-            groupName: { $first: "$group.name" },
-            companies: {
-              $addToSet: {
-                _id: "$company._id",
-                name: "$company.name",
-                accounts: "$companyAccounts",
-                balance: "$companyTotal",
-                ingresos: "$companyIngresos",
-                egresos: "$companyEgresos",
+          companyIngresos: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companyAccounts", []] },
+                as: "acc",
+                in: { $ifNull: ["$$acc.ingresos", 0] },
               },
             },
-            userDoc: {
-              $first: {
-                _id: "$userDoc._id",
-                name: "$userDoc.name",
-                email: "$userDoc.email",
+          },
+          companyEgresos: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companyAccounts", []] },
+                as: "acc",
+                in: { $ifNull: ["$$acc.egresos", 0] },
               },
             },
           },
         },
+      },
 
-        // ✅ totales del grupo sumando companies
-        {
-          $addFields: {
-            groupbalance: {
-              $sum: {
-                $map: {
-                  input: { $ifNull: ["$companies", []] },
-                  as: "comp",
-                  in: { $ifNull: ["$$comp.balance", 0] },
-                },
+      // user
+      {
+        $lookup: {
+          from: "users",
+          localField: "user",
+          foreignField: "_id",
+          as: "userDoc",
+        },
+      },
+      { $unwind: "$userDoc" },
+
+      // agrupar por grupo
+      {
+        $group: {
+          _id: "$group._id",
+          groupName: { $first: "$group.name" },
+          companies: {
+            $addToSet: {
+              _id: "$company._id",
+              name: "$company.name",
+              fiscalYear: {
+                _id: "$fy._id",
+                name: "$fy.name",
+                startDate: "$fy.startDate",
+                endDate: "$fy.endDate",
+              },
+              accounts: "$companyAccounts",
+              balance: "$companyTotal",
+              ingresos: "$companyIngresos",
+              egresos: "$companyEgresos",
+            },
+          },
+          userDoc: {
+            $first: {
+              _id: "$userDoc._id",
+              name: "$userDoc.name",
+              email: "$userDoc.email",
+            },
+          },
+        },
+      },
+
+      // totales del grupo sumando companies
+      {
+        $addFields: {
+          groupbalance: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companies", []] },
+                as: "comp",
+                in: { $ifNull: ["$$comp.balance", 0] },
               },
             },
-            groupIngresos: {
-              $sum: {
-                $map: {
-                  input: { $ifNull: ["$companies", []] },
-                  as: "comp",
-                  in: { $ifNull: ["$$comp.ingresos", 0] },
-                },
+          },
+          groupIngresos: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companies", []] },
+                as: "comp",
+                in: { $ifNull: ["$$comp.ingresos", 0] },
               },
             },
-            groupEgresos: {
-              $sum: {
-                $map: {
-                  input: { $ifNull: ["$companies", []] },
-                  as: "comp",
-                  in: { $ifNull: ["$$comp.egresos", 0] },
-                },
+          },
+          groupEgresos: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companies", []] },
+                as: "comp",
+                in: { $ifNull: ["$$comp.egresos", 0] },
               },
             },
           },
         },
+      },
 
-        // ✅ agrupar por usuario final
-        {
-          $group: {
-            _id: "$userDoc._id",
-            user: { $first: "$userDoc" },
-            groups: {
-              $push: {
-                _id: "$_id",
-                name: "$groupName",
-                balance: "$groupbalance",
-                ingresos: "$groupIngresos",
-                egresos: "$groupEgresos",
-                companies: "$companies",
-              },
+      // agrupar final como home
+      {
+        $group: {
+          _id: "$userDoc._id",
+          user: { $first: "$userDoc" },
+          groups: {
+            $push: {
+              _id: "$_id",
+              name: "$groupName",
+              balance: "$groupbalance",
+              ingresos: "$groupIngresos",
+              egresos: "$groupEgresos",
+              companies: "$companies",
             },
           },
         },
+      },
 
-        { $project: { _id: 0, user: 1, groups: 1 } },
-      ]);
+      { $project: { _id: 0, user: 1, groups: 1 } },
+    ]);
 
-      return overview ?? { user: null, groups: [] };
-    } catch (error) {
-      console.log(error);
-      throw CustomError.internalServer("Internal Server Error");
-    }
+    return overview ?? { user: null, groups: [] };
+  } catch (error) {
+    console.log(error);
+    throw CustomError.internalServer("Internal Server Error");
   }
+}
+
 
   async getCompanyBudgetVsActual(userId: string) {
     const uid = Validators.convertToUid(userId);
