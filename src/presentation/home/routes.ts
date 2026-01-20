@@ -15,6 +15,7 @@ export class HomeRoutes {
     // Definir las rutas
     router.get('/', [ AuthMiddleware.validateJWT ], controller.getHomeOverview);
     router.get('/budget-vs-actual', [ AuthMiddleware.validateJWT ], controller.getCompanyBudgetVsActual);
+    router.get('/buckets-summary', [ AuthMiddleware.validateJWT ], controller.getHomeBucketsSummary);
     // router.post('/', [ AuthMiddleware.validateJWT ], controller.createGroup);
 
 
