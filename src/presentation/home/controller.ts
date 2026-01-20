@@ -42,7 +42,9 @@ export class HomeController {
             return res.status(401).json({ error: 'User not authenticated' });
         }
 
-        await this.homeService.getCompanyBudgetVsActual(user.id)
+        const mockFiscalYearId = '696e87baeea58af170d44057';
+
+        await this.homeService.getCompanyBudgetVsActual(user.id, mockFiscalYearId)
             .then ( overview => res.json( overview ))
             .catch( error => this.handleError( error, res ) );
         
