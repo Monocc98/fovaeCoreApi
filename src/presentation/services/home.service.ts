@@ -586,7 +586,7 @@ export class HomeService {
             pipeline: [
               { $match: { $expr: { $eq: ["$company", "$$companyId"] } } },
 
-              // Traer type de subsubcategory (INCOME / EXPENSE)
+              // 1) budget -> subsub
               {
                 $lookup: {
                   from: "subsubcategories",
@@ -597,20 +597,56 @@ export class HomeService {
               },
               { $addFields: { subsub: { $arrayElemAt: ["$subsub", 0] } } },
 
-              // Firmar el monto: EXPENSE -> negativo
+              // 2) subsub -> subcategory
+              {
+                $lookup: {
+                  from: "subcategories",
+                  localField: "subsub.parent",
+                  foreignField: "_id",
+                  as: "subcat",
+                },
+              },
+              { $addFields: { subcat: { $arrayElemAt: ["$subcat", 0] } } },
+
+              // 3) subcategory -> category
+              {
+                $lookup: {
+                  from: "categories",
+                  localField: "subcat.parent",
+                  foreignField: "_id",
+                  as: "cat",
+                },
+              },
+              { $addFields: { cat: { $arrayElemAt: ["$cat", 0] } } },
+
+              // 4) normaliza type (EXPENSE / INCOME)
+              {
+                $addFields: {
+                  catType: { $toUpper: { $ifNull: ["$cat.type", ""] } },
+                },
+              },
+
+              // 5) firmar el monto:
+              //    EXPENSE => negativo (solo si viene positivo)
               {
                 $addFields: {
                   signedAmount: {
                     $cond: [
-                      { $eq: ["$subsub.type", "EXPENSE"] },
-                      { $multiply: ["$amount", -1] },
+                      { $eq: ["$catType", "EXPENSE"] },
+                      {
+                        $cond: [
+                          { $gt: ["$amount", 0] },
+                          { $multiply: ["$amount", -1] },
+                          "$amount",
+                        ],
+                      },
                       "$amount",
                     ],
                   },
                 },
               },
 
-              // Agrupar por mes
+              // 6) agrupar por (year, month)
               {
                 $group: {
                   _id: { y: "$year", m: "$month" },
