@@ -1117,29 +1117,15 @@ export class HomeService {
     }
   }
 
-  // ============================================================
-  // ✅ RESUMEN "BUCKETS" (Home: Resumen por Categorias)
-  // - Detecta FY en curso por company
-  // - Detecta grupos/empresas visibles por el usuario (Membership)
-  // - Suma movimientos por buckets (mapping configurable)
-  // - Devuelve: { user, groups:[{..., companies:[...], summary:{...}}] }
-  // ============================================================
+    /**
+   * ✅ Resumen por buckets (tabla Home)
+   * - Los buckets viven en Category (ej: cat.bucket)
+   * - Movements guardan subsubcategory
+   * - Se resuelve: movement.subsubcategory -> subsub -> subcat -> cat -> cat.bucket
+   * - Se arma summary por company y luego por group
+   */
   async getHomeBucketsSummary(userId: string) {
     const uid = Validators.convertToUid(userId);
-
-    // Ajusta estos nombres a tus colecciones reales
-    const COLL_FY_PIVOT = "fiscalyear_companies";
-    const COLL_FY = "fiscalyears";
-    const COLL_ACCOUNTS = "accounts";
-    const COLL_MOVEMENTS = "movements";
-
-    // Mapping (bucket) por group (y opcionalmente por company)
-    // Documento esperado:
-    // { group, company?: ObjectId, category: ObjectId, bucket: 'INCOME'|'FIXED_EXPENSE'|'VARIABLE_EXPENSE'|'FAMILY', isActive:true }
-    const COLL_BUCKET_MAP = "group_category_mapping"; // 👈 AJUSTA
-
-    // Estas son las "filas fijas" de tu tabla
-    const BUCKETS = ["INCOME", "FIXED_EXPENSE", "VARIABLE_EXPENSE", "FAMILY"];
 
     try {
       const [overview] = await MembershipModel.aggregate([
@@ -1183,14 +1169,14 @@ export class HomeService {
         // ============================================================
         {
           $lookup: {
-            from: COLL_FY_PIVOT,
+            from: "fiscalyear_companies",
             let: { companyId: "$company._id", now: "$$NOW" },
             pipeline: [
               { $match: { $expr: { $eq: ["$company", "$$companyId"] } } },
 
               {
                 $lookup: {
-                  from: COLL_FY,
+                  from: "fiscalyears",
                   localField: "fiscalYear",
                   foreignField: "_id",
                   as: "fy",
@@ -1254,7 +1240,7 @@ export class HomeService {
         // ============================================================
         {
           $lookup: {
-            from: COLL_ACCOUNTS,
+            from: "accounts",
             let: { companyId: "$company._id" },
             pipeline: [
               { $match: { $expr: { $eq: ["$company", "$$companyId"] } } },
@@ -1276,27 +1262,23 @@ export class HomeService {
         },
 
         // ============================================================
-        // ✅ Movimientos del FY + resolver categoría TOP (category)
-        //
-        // IMPORTANTE:
-        // - Aquí asumo que Movement tiene: { account, occurredAt, amount, subsubcategory }
-        // - Si tu Movement guarda category/subcategory/subsub de otra forma,
-        //   ajusta esta sección.
+        // ✅ Movements del FY + resolver Category.bucket
+        // (movement.subsubcategory -> subsub -> subcat -> cat)
         // ============================================================
         {
           $lookup: {
-            from: COLL_MOVEMENTS,
+            from: "movements",
             let: {
               accountIds: "$accountIds",
               fyStart: "$fyStart",
               fyEnd: "$fyEnd",
             },
             pipeline: [
+              // si no hay FY => no trae nada (mantengo tu patrón)
               {
                 $match: {
                   $expr: {
                     $and: [
-                      // si no hay FY => no trae movimientos (puedes cambiar esta regla)
                       { $ne: ["$$fyStart", null] },
                       { $in: ["$account", "$$accountIds"] },
                       { $gte: ["$occurredAt", "$$fyStart"] },
@@ -1306,7 +1288,7 @@ export class HomeService {
                 },
               },
 
-              // subsub -> subcategory
+              // subsub
               {
                 $lookup: {
                   from: "subsubcategories",
@@ -1317,6 +1299,7 @@ export class HomeService {
               },
               { $addFields: { subsub: { $arrayElemAt: ["$subsub", 0] } } },
 
+              // subcat
               {
                 $lookup: {
                   from: "subcategories",
@@ -1327,7 +1310,7 @@ export class HomeService {
               },
               { $addFields: { subcat: { $arrayElemAt: ["$subcat", 0] } } },
 
-              // subcategory -> category (TOP)
+              // cat
               {
                 $lookup: {
                   from: "categories",
@@ -1338,12 +1321,18 @@ export class HomeService {
               },
               { $addFields: { cat: { $arrayElemAt: ["$cat", 0] } } },
 
+              // normaliza bucket en mayúsculas por si acaso
+              {
+                $addFields: {
+                  bucket: { $toUpper: { $ifNull: ["$cat.bucket", "UNMAPPED"] } },
+                },
+              },
+
               {
                 $project: {
                   _id: 1,
                   amount: 1,
-                  occurredAt: 1,
-                  categoryId: "$cat._id",
+                  bucket: 1,
                 },
               },
             ],
@@ -1352,62 +1341,19 @@ export class HomeService {
         },
 
         // ============================================================
-        // ✅ Mapear cada movimiento a bucket (según group + category)
-        // - Busca mapping por group+category (y si usas company en mapping, también)
+        // ✅ Explode moves + company-level summary por buckets
+        // Reglas:
+        // - INCOME: suma solo positivos
+        // - buckets de egreso: suma abs() (devuelve positivo)
         // ============================================================
         { $unwind: { path: "$movesFY", preserveNullAndEmptyArrays: true } },
-
-        {
-          $lookup: {
-            from: COLL_BUCKET_MAP,
-            let: {
-              groupId: "$group._id",
-              companyId: "$company._id",
-              categoryId: "$movesFY.categoryId",
-            },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ["$group", "$$groupId"] },
-                      { $eq: ["$category", "$$categoryId"] },
-                      { $eq: ["$isActive", true] },
-
-                      // ✅ si tu mapping NO usa company, comenta este bloque
-                      {
-                        $or: [
-                          { $eq: ["$company", "$$companyId"] },
-                          { $eq: ["$company", null] }, // permite mapping "por group" general
-                        ],
-                      },
-                    ],
-                  },
-                },
-              },
-              { $sort: { company: -1 } }, // prioriza company-specific si existe
-              { $limit: 1 },
-              { $project: { _id: 0, bucket: 1 } },
-            ],
-            as: "bucketDoc",
-          },
-        },
-
         {
           $addFields: {
-            moveBucket: {
-              $ifNull: [{ $arrayElemAt: ["$bucketDoc.bucket", 0] }, "UNMAPPED"],
-            },
+            moveBucket: { $ifNull: ["$movesFY.bucket", "UNMAPPED"] },
             moveAmount: { $ifNull: ["$movesFY.amount", 0] },
           },
         },
 
-        // ============================================================
-        // ✅ Company-level: agrupar por company y sumar buckets
-        // Reglas:
-        // - INCOME: suma solo positivos
-        // - EXPENSE buckets: suma abs(negativos) (o abs de amount si ya lo guardas negativo)
-        // ============================================================
         {
           $group: {
             _id: {
@@ -1436,7 +1382,13 @@ export class HomeService {
               $sum: {
                 $cond: [
                   { $eq: ["$moveBucket", "FIXED_EXPENSE"] },
-                  { $cond: [{ $lt: ["$moveAmount", 0] }, { $abs: "$moveAmount" }, "$moveAmount"] },
+                  {
+                    $cond: [
+                      { $lt: ["$moveAmount", 0] },
+                      { $abs: "$moveAmount" },
+                      "$moveAmount",
+                    ],
+                  },
                   0,
                 ],
               },
@@ -1446,7 +1398,13 @@ export class HomeService {
               $sum: {
                 $cond: [
                   { $eq: ["$moveBucket", "VARIABLE_EXPENSE"] },
-                  { $cond: [{ $lt: ["$moveAmount", 0] }, { $abs: "$moveAmount" }, "$moveAmount"] },
+                  {
+                    $cond: [
+                      { $lt: ["$moveAmount", 0] },
+                      { $abs: "$moveAmount" },
+                      "$moveAmount",
+                    ],
+                  },
                   0,
                 ],
               },
@@ -1456,7 +1414,13 @@ export class HomeService {
               $sum: {
                 $cond: [
                   { $eq: ["$moveBucket", "FAMILY"] },
-                  { $cond: [{ $lt: ["$moveAmount", 0] }, { $abs: "$moveAmount" }, "$moveAmount"] },
+                  {
+                    $cond: [
+                      { $lt: ["$moveAmount", 0] },
+                      { $abs: "$moveAmount" },
+                      "$moveAmount",
+                    ],
+                  },
                   0,
                 ],
               },
@@ -1468,7 +1432,6 @@ export class HomeService {
           },
         },
 
-        // ✅ Balance total (ingresos - egresosFijos - egresosVariables - family)
         {
           $addFields: {
             total: {
@@ -1481,19 +1444,11 @@ export class HomeService {
         },
 
         // ============================================================
-        // ✅ Agrupar companies dentro de cada group
+        // ✅ group -> companies
         // ============================================================
         {
           $group: {
-            _id: {
-              userId: "$_id.userId",
-              groupId: "$_id.groupId",
-            },
-            userDoc: {
-              $first: {
-                _id: "$_id.userId",
-              },
-            },
+            _id: { userId: "$_id.userId", groupId: "$_id.groupId" },
             groupName: { $first: "$_id.groupName" },
 
             companies: {
@@ -1519,69 +1474,49 @@ export class HomeService {
           },
         },
 
-        // ============================================================
-        // ✅ Group summary = suma de summaries de sus companies
-        // ============================================================
+        // group summary = suma companies
         {
           $addFields: {
-            groupSummary: {
+            summary: {
               ingresos: {
-                $sum: {
-                  $map: { input: "$companies", as: "c", in: "$$c.summary.ingresos" },
-                },
+                $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.ingresos" } },
               },
               egresosFijos: {
-                $sum: {
-                  $map: { input: "$companies", as: "c", in: "$$c.summary.egresosFijos" },
-                },
+                $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.egresosFijos" } },
               },
               egresosVariables: {
-                $sum: {
-                  $map: { input: "$companies", as: "c", in: "$$c.summary.egresosVariables" },
-                },
+                $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.egresosVariables" } },
               },
               family: {
-                $sum: {
-                  $map: { input: "$companies", as: "c", in: "$$c.summary.family" },
-                },
+                $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.family" } },
               },
               total: {
-                $sum: {
-                  $map: { input: "$companies", as: "c", in: "$$c.summary.total" },
-                },
+                $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.total" } },
               },
               unmappedCount: {
-                $sum: {
-                  $map: { input: "$companies", as: "c", in: "$$c.summary.unmappedCount" },
-                },
+                $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.unmappedCount" } },
               },
             },
           },
         },
 
         // ============================================================
-        // ✅ Re-armar { user, groups:[] }
+        // ✅ final: { user, groups:[] }
         // ============================================================
         {
           $group: {
             _id: "$_id.userId",
-            user: {
-              $first: {
-                _id: "$_id.userId",
-              },
-            },
             groups: {
               $push: {
                 _id: "$_id.groupId",
                 name: "$groupName",
-                summary: "$groupSummary",
+                summary: "$summary",
                 companies: "$companies",
               },
             },
           },
         },
 
-        // traer user completo (nombre/email)
         {
           $lookup: {
             from: "users",
@@ -1601,7 +1536,6 @@ export class HomeService {
         },
       ]);
 
-      // Normaliza retorno
       return overview ?? { user: null, groups: [] };
     } catch (error) {
       console.log(error);
