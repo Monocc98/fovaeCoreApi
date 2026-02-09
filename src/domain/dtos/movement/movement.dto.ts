@@ -12,11 +12,12 @@ export class CreateMovementDto {
         public readonly subsubcategory : string,
         // public readonly tags : string,
         public readonly transfererId : string,
+        public readonly comments : string,
     ) {}
 
     static create( object: { [key: string]: any } ): [string?, CreateMovementDto?] {
 
-        const { description, account, occurredAt, amount, source, subsubcategory, transfererId} = object;
+        const { description, account, occurredAt, amount, source, subsubcategory, transfererId, comments } = object;
         
         if (!account) return ['Missing account'];
         if (!occurredAt) return ['Missing occurredAt'];
@@ -35,7 +36,7 @@ export class CreateMovementDto {
         const parsedAmount = Number(amount);
         if (isNaN(parsedAmount)) return ['Invalid amount'];
         
-        return [undefined,  new CreateMovementDto( description, account, occurredAt, amount, source, subsubcategory, transfererId )]
+        return [undefined,  new CreateMovementDto( description, account, occurredAt, amount, source, subsubcategory, transfererId, comments )]
 
     }
 }
@@ -50,11 +51,12 @@ export class UpdateMovementDto {
         public readonly subsubcategory : string,
         // public readonly tags : string,
         public readonly transfererId : string,
+        public readonly comments ?: string,
     ) {}
 
     static update( object: { [key: string]: any } ): [string?, UpdateMovementDto?] {
 
-        const { description, amount, occurredAt, subsubcategory, transfererId } = object;
+        const { description, amount, occurredAt, subsubcategory, transfererId, comments } = object;
         
         if (!description) return ['Missing occurredAt'];
         if (!occurredAt) return ['Missing occurredAt'];
@@ -69,7 +71,7 @@ export class UpdateMovementDto {
         const parsedAmount = Number(amount);
         if (isNaN(parsedAmount)) return ['Invalid amount'];
         
-        return [undefined,  new UpdateMovementDto( description, amount, occurredAt, subsubcategory, transfererId )]
+        return [undefined,  new UpdateMovementDto( description, amount, occurredAt, subsubcategory, transfererId, comments )]
 
     }
 
