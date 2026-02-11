@@ -391,6 +391,27 @@ export class MovementService {
 
           // Validación mínima: que tenga Numero, Fecha, Categoria y Monto
           const csvRowNumber = headerIndex + 2 + rawIndex;
+          const hasAnyValue = Boolean(
+            mapped.Numero ||
+              mapped.Fecha ||
+              mapped.Categoria ||
+              mapped.Nombre ||
+              mapped.Monto
+          );
+
+          if (!hasAnyValue) {
+            return null;
+          }
+
+          const categoria = String(mapped.Categoria ?? "").toLowerCase();
+          const nombre = String(mapped.Nombre ?? "").toLowerCase();
+          const isFooterTotalRow =
+            !mapped.Numero &&
+            (categoria.includes("total") || nombre.includes("total"));
+
+          if (isFooterTotalRow) {
+            return null;
+          }
 
           if (!mapped.Numero) {
             throw CustomError.badRequest(
@@ -404,7 +425,8 @@ export class MovementService {
           }
 
           return mapped as SolucionFactibleRow;
-        });
+        })
+        .filter((r): r is SolucionFactibleRow => r !== null);
 
       if (!records.length) {
         throw CustomError.badRequest(
