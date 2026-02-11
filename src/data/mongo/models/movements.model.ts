@@ -64,6 +64,16 @@ const movementsSchema = new mongoose.Schema({
   },
 });
 
+movementsSchema.index(
+  { account: 1, source: 1, externalNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      externalNumber: { $exists: true, $type: "string", $ne: "" },
+    },
+  }
+);
+
 movementsSchema.set('toJSON', {
   virtuals: true,
   versionKey: false,

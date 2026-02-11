@@ -5,7 +5,7 @@ import {
   findHeaderRowIndex,
   buildHeaderMap,
 } from "../../config";
-import { AccountBalancesModel, MovementModel } from "../../data";
+import { MovementModel } from "../../data";
 import { ConceptRuleModel } from "../../data/mongo/models/conceptRule.model";
 import { MovementImportBatchModel } from "../../data/mongo/models/movementImportBatch.model";
 import {
@@ -44,11 +44,6 @@ export class MovementService {
 
       await movement.save();
 
-      await AccountBalancesModel.updateOne(
-        { _id: movement.account },
-        { $inc: { balance: movement.amount } }
-      );
-
       return {
         movement,
       };
@@ -69,26 +64,13 @@ export class MovementService {
       const prevMovement = await MovementModel.findById(movementIdMongo);
       if (!prevMovement) throw CustomError.notFound("Movement not found");
 
-      const prevAmount = Number(prevMovement.amount);
-
-      const newAmount =
-        updateMovementDto.amount !== undefined
-          ? Number(updateMovementDto.amount)
-          : prevAmount;
-
       const updatedMovement = await MovementModel.findByIdAndUpdate(
         movementIdMongo,
         { ...updateMovementDto, updatedAt: new Date() },
         { new: true }
       );
 
-      const diff = newAmount - prevAmount;
-      if (diff != 0) {
-        await AccountBalancesModel.updateOne(
-          { _id: prevMovement.account },
-          { $inc: { balance: diff } }
-        );
-      }
+      return { movement: updatedMovement };
     } catch (error) {
       throw CustomError.internalServer(`${error}`);
     }
@@ -102,16 +84,6 @@ export class MovementService {
 
       const prevMovement = await MovementModel.findById(movementIdMongo);
       if (!prevMovement) throw CustomError.notFound("Movement not found");
-
-      const amount =
-        typeof prevMovement.amount === "number"
-          ? prevMovement.amount
-          : Number(prevMovement.amount ?? 0);
-
-      await AccountBalancesModel.updateOne(
-        { _id: prevMovement.account }, // mismo _id que la cuenta en tu balances
-        { $inc: { balance: -amount } } // deshacer el efecto
-      );
 
       const deletedMovement = await MovementModel.findByIdAndDelete(
         movementIdMongo
@@ -143,20 +115,14 @@ export class MovementService {
         throw CustomError.badRequest("Invalid account ID");
       const accountIdMongo = Validators.convertToUid(idAccount);
 
-      // const [movements, balanceDoc] = await Promise.all([
-      //     MovementModel.find({ account: accountIdMongo }).populate('category'),
-      //     AccountBalancesModel.findById(accountIdMongo)
-      // ]);
-
-      // const balance = balanceDoc?.balance ?? 0;
-
       const movements = await MovementModel.find({
         account: accountIdMongo,
       }).populate("subsubcategory");
 
-      const balanceDoc = await AccountBalancesModel.findById(accountIdMongo);
-
-      const balance = balanceDoc?.balance ?? 0;
+      const balance = movements.reduce(
+        (acc: number, movement: any) => acc + Number(movement.amount ?? 0),
+        0
+      );
 
       return {
         movements,
@@ -399,7 +365,7 @@ export class MovementService {
           .trim();
 
       const records: SolucionFactibleRow[] = rawRecords
-        .map((raw) => {
+        .map((raw, rawIndex) => {
           const mapped: Partial<SolucionFactibleRow> = {};
 
           for (const [key, value] of Object.entries(raw)) {
@@ -424,18 +390,21 @@ export class MovementService {
           }
 
           // Validación mínima: que tenga Numero, Fecha, Categoria y Monto
-          if (
-            !mapped.Numero ||
-            !mapped.Fecha ||
-            !mapped.Categoria ||
-            !mapped.Monto
-          ) {
-            return null; // descartamos filas incompletas
+          const csvRowNumber = headerIndex + 2 + rawIndex;
+
+          if (!mapped.Numero) {
+            throw CustomError.badRequest(
+              `Id externo vacio en fila #${csvRowNumber} (columna Numero)`
+            );
+          }
+          if (!mapped.Fecha || !mapped.Categoria || !mapped.Monto) {
+            throw CustomError.badRequest(
+              `Fila incompleta #${csvRowNumber}: se requiere Numero, Fecha, Categoria y Monto`
+            );
           }
 
           return mapped as SolucionFactibleRow;
-        })
-        .filter((r): r is SolucionFactibleRow => r !== null);
+        });
 
       if (!records.length) {
         throw CustomError.badRequest(
@@ -444,12 +413,19 @@ export class MovementService {
       }
 
       // 7) Normalizar filas + parsear fecha + extraer clave + ignorar colegiaturas
-      const normalizedRows = records
+      const normalizedRowsWithMeta = records
         .map((row, index) => {
           // ignorar exactamente "Colegiaturas [60101001]"
           const categoriaTrim = row.Categoria.trim();
           if (categoriaTrim === "Colegiaturas [60101001]") {
             return null;
+          }
+
+          const externalNumber = String(row.Numero ?? "").trim();
+          if (!externalNumber) {
+            throw CustomError.badRequest(
+              `Id externo vacio en la fila de datos #${index + 1}`
+            );
           }
 
           const externalConceptKey = getExternalConceptKeyFromCategory(
@@ -478,12 +454,13 @@ export class MovementService {
           }
 
           return {
-            externalNumber: row.Numero,
+            externalNumber,
             occurredAt,
             externalCategoryRaw: row.Categoria,
             externalConceptKey,
             externalName: row.Nombre,
             amount: amountNumber,
+            rowNumber: index + 1,
           };
         })
         .filter((r) => r !== null) as Array<{
@@ -493,13 +470,29 @@ export class MovementService {
         externalConceptKey: string | null;
         externalName: string;
         amount: number;
+        rowNumber: number;
       }>;
 
-      if (!normalizedRows.length) {
+      if (!normalizedRowsWithMeta.length) {
         throw CustomError.badRequest(
           "Todas las filas fueron descartadas (por categoría ignorada o datos inválidos)"
         );
       }
+
+      const seenExternalNumbers = new Map<string, number>();
+      for (const row of normalizedRowsWithMeta) {
+        const firstRow = seenExternalNumbers.get(row.externalNumber);
+        if (firstRow !== undefined) {
+          throw CustomError.badRequest(
+            `Id externo duplicado "${row.externalNumber}" en filas de datos #${firstRow} y #${row.rowNumber}`
+          );
+        }
+        seenExternalNumbers.set(row.externalNumber, row.rowNumber);
+      }
+
+      const normalizedRows = normalizedRowsWithMeta.map(
+        ({ rowNumber, ...row }) => row
+      );
 
       // 8) Guardar batch en Mongo
       const batch = await MovementImportBatchModel.create({
@@ -636,9 +629,31 @@ export class MovementService {
           await existingRule.save();
         }
       }
+      const source = "SOLUCION_FACTIBLE";
+      const rows = batch.rows as any[];
+      const externalNumbers = rows.map((row) => String(row.externalNumber));
 
-      // Crear movimientos
-      const movementsToInsert = (batch.rows as any[]).map((row) => {
+      const existingMovements = await MovementModel.find({
+        account: accountId,
+        source,
+        externalNumber: { $in: externalNumbers },
+      }).lean();
+
+      const existingByExternalNumber = new Map<string, any>();
+      for (const movement of existingMovements) {
+        existingByExternalNumber.set(String(movement.externalNumber), movement);
+      }
+
+      const movementsToInsert: any[] = [];
+      const updates: any[] = [];
+      let skippedCount = 0;
+
+      for (const row of rows) {
+        const externalNumber = String(row.externalNumber ?? "").trim();
+        if (!externalNumber) {
+          throw CustomError.badRequest("Id externo vacio en batch de importacion");
+        }
+
         const subsubcategoryId = mapConceptToSubsub.get(
           row.externalConceptKey || "SIN_CLAVE"
         );
@@ -649,42 +664,83 @@ export class MovementService {
           );
         }
 
-        return {
-          description: `${row.externalCategoryRaw} - ${row.externalName}`,
-          comments: "",
-          account: accountId,
-          occurredAt: row.occurredAt,
-          recordedAt: new Date(),
-          amount: row.amount,
-          source: "SOLUCION_FACTIBLE",
-          subsubcategory: subsubcategoryId,
-          tags: [],
-          transfererId: undefined,
-          externalNumber: row.externalNumber,
-          externalCategoryRaw: row.externalCategoryRaw,
-          externalConceptKey: row.externalConceptKey,
-          externalName: row.externalName,
-          importBatchId: batch._id,
-        };
-      });
+        const description = `${row.externalCategoryRaw} - ${row.externalName}`;
+        const existing = existingByExternalNumber.get(externalNumber);
 
-      await MovementModel.insertMany(movementsToInsert);
+        if (!existing) {
+          movementsToInsert.push({
+            description,
+            comments: "",
+            account: accountId,
+            occurredAt: row.occurredAt,
+            recordedAt: new Date(),
+            amount: row.amount,
+            source,
+            subsubcategory: subsubcategoryId,
+            tags: [],
+            transfererId: undefined,
+            externalNumber,
+            externalCategoryRaw: row.externalCategoryRaw,
+            externalConceptKey: row.externalConceptKey,
+            externalName: row.externalName,
+            importBatchId: batch._id,
+          });
+          continue;
+        }
+
+        const sameAmount = Number(existing.amount ?? 0) === Number(row.amount ?? 0);
+        const sameSubsubcategory =
+          String(existing.subsubcategory) === String(subsubcategoryId);
+        const sameOccurredAt =
+          new Date(existing.occurredAt).getTime() ===
+          new Date(row.occurredAt).getTime();
+        const sameDescription = String(existing.description ?? "") === description;
+
+        if (sameAmount && sameSubsubcategory && sameOccurredAt && sameDescription) {
+          skippedCount += 1;
+          continue;
+        }
+
+        updates.push({
+          updateOne: {
+            filter: { _id: existing._id },
+            update: {
+              $set: {
+                description,
+                comments: "",
+                occurredAt: row.occurredAt,
+                amount: row.amount,
+                subsubcategory: subsubcategoryId,
+                tags: [],
+                transfererId: undefined,
+                externalNumber,
+                externalCategoryRaw: row.externalCategoryRaw,
+                externalConceptKey: row.externalConceptKey,
+                externalName: row.externalName,
+                importBatchId: batch._id,
+                updatedAt: new Date(),
+              },
+            },
+          },
+        });
+      }
+
+      if (movementsToInsert.length) {
+        await MovementModel.insertMany(movementsToInsert);
+      }
+
+      if (updates.length) {
+        await MovementModel.bulkWrite(updates);
+      }
 
       batch.status = "PROCESSED";
       await batch.save();
 
-      const totalAmount = movementsToInsert.reduce(
-        (acc, m) => acc + Number(m.amount ?? 0),
-        0
-      );
-      await AccountBalancesModel.updateOne(
-        { _id: accountId },
-        { $inc: { balance: totalAmount } }
-      );
-
       return {
-        message: "Movements imported successfully",
+        message: "Movements processed successfully",
         insertedCount: movementsToInsert.length,
+        updatedCount: updates.length,
+        skippedCount,
       };
     } catch (error) {
       throw CustomError.internalServer(`${error}`);
