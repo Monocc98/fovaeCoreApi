@@ -403,13 +403,15 @@ export class MovementService {
             return null;
           }
 
+          const numero = String(mapped.Numero ?? "").toLowerCase();
           const categoria = String(mapped.Categoria ?? "").toLowerCase();
           const nombre = String(mapped.Nombre ?? "").toLowerCase();
           const isFooterTotalRow =
-            !mapped.Numero &&
-            (categoria.includes("total") || nombre.includes("total"));
+            numero.includes("total") ||
+            categoria.includes("total") ||
+            nombre.includes("total");
 
-          if (isFooterTotalRow) {
+          if (isFooterTotalRow && (!mapped.Fecha || !mapped.Categoria)) {
             return null;
           }
 
