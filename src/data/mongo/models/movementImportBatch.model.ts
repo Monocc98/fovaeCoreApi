@@ -25,7 +25,7 @@ const movementImportBatchSchema = new mongoose.Schema({
   ],
   status: {
     type: String,
-    enum: ['PENDING', 'PROCESSED'],
+    enum: ['PENDING', 'PROCESSED', 'PROCESSED_WITH_REVIEW'],
     default: 'PENDING',
   },
 });

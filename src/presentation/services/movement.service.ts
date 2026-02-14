@@ -28,6 +28,50 @@ interface SolucionFactibleRow {
   Monto: string;
 }
 
+const normalizeFingerprintPart = (value: unknown) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+
+const toLocalDateKey = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const buildServoFingerprint = (params: {
+  occurredAt: Date;
+  conceptKey: string;
+  alumno: string;
+  matricula: string;
+  amount: number;
+}) => {
+  const amountKey = Number(params.amount ?? 0).toFixed(2);
+  return [
+    "SERVO",
+    toLocalDateKey(params.occurredAt),
+    normalizeFingerprintPart(params.conceptKey),
+    normalizeFingerprintPart(params.alumno),
+    normalizeFingerprintPart(params.matricula),
+    amountKey,
+  ].join("|");
+};
+
+const buildServoReviewIdentity = (params: {
+  occurredAt: Date;
+  conceptKey: string;
+  alumno: string;
+}) =>
+  [
+    toLocalDateKey(new Date(params.occurredAt)),
+    normalizeFingerprintPart(params.conceptKey),
+    normalizeFingerprintPart(params.alumno),
+  ].join("|");
+
 // 🔹 Claves externas que NO queremos importar
 const IGNORED_EXTERNAL_KEYS = new Set<string>(["60101001"]);
 
@@ -604,7 +648,7 @@ export class MovementService {
       const batch = await MovementImportBatchModel.findById(batchIdMongo);
       if (!batch) throw CustomError.notFound("Batch not found");
 
-      if (batch.status === "PROCESSED") {
+      if (batch.status !== "PENDING") {
         throw CustomError.badRequest("Batch already processed");
       }
 
@@ -671,6 +715,59 @@ export class MovementService {
       const movementsToInsert: any[] = [];
       const updates: any[] = [];
       let skippedCount = 0;
+      const reviewItems: Array<{
+        externalNumber: string;
+        externalConceptKey: string | null;
+        externalName: string;
+        occurredAt: Date;
+        amount: number;
+        reason: "POSSIBLE_UPDATE" | "AMBIGUOUS_MATCH";
+        matchedCount?: number;
+        matchedExternalNumber?: string;
+        matchedAmount?: number;
+      }> = [];
+
+      const isServoBatch = batch.source === "SERVO_ESCOLAR";
+      const servoCandidatesByIdentity = new Map<string, any[]>();
+      if (isServoBatch) {
+        const conceptKeysForLookup = Array.from(
+          new Set(
+            rows.map((row) => String(row.externalConceptKey || "SIN_CLAVE"))
+          )
+        );
+        const namesForLookup = Array.from(
+          new Set(rows.map((row) => String(row.externalName || "")))
+        );
+        const datesForLookup = Array.from(
+          new Set(
+            rows.map((row) => {
+              const d = new Date(row.occurredAt);
+              d.setHours(0, 0, 0, 0);
+              return d.getTime();
+            })
+          )
+        ).map((t) => new Date(t));
+
+        const servoCandidates = await MovementModel.find({
+          account: accountId,
+          source,
+          externalConceptKey: { $in: conceptKeysForLookup },
+          externalName: { $in: namesForLookup },
+          occurredAt: { $in: datesForLookup },
+        }).lean();
+
+        for (const movement of servoCandidates) {
+          const key = buildServoReviewIdentity({
+            occurredAt: new Date(movement.occurredAt),
+            conceptKey: String(movement.externalConceptKey || "SIN_CLAVE"),
+            alumno: String(movement.externalName || ""),
+          });
+
+          const list = servoCandidatesByIdentity.get(key) ?? [];
+          list.push(movement);
+          servoCandidatesByIdentity.set(key, list);
+        }
+      }
 
       for (const row of rows) {
         const externalNumber = String(row.externalNumber ?? "").trim();
@@ -692,6 +789,52 @@ export class MovementService {
         const existing = existingByExternalNumber.get(externalNumber);
 
         if (!existing) {
+          if (isServoBatch) {
+            const identityKey = buildServoReviewIdentity({
+              occurredAt: new Date(row.occurredAt),
+              conceptKey: String(row.externalConceptKey || "SIN_CLAVE"),
+              alumno: String(row.externalName || ""),
+            });
+            const candidates = servoCandidatesByIdentity.get(identityKey) ?? [];
+
+            if (candidates.length > 1) {
+              reviewItems.push({
+                externalNumber,
+                externalConceptKey: row.externalConceptKey ?? null,
+                externalName: String(row.externalName || ""),
+                occurredAt: new Date(row.occurredAt),
+                amount: Number(row.amount ?? 0),
+                reason: "AMBIGUOUS_MATCH",
+                matchedCount: candidates.length,
+              });
+              continue;
+            }
+
+            if (candidates.length === 1) {
+              const candidate = candidates[0];
+              const sameAmount =
+                Number(candidate.amount ?? 0) === Number(row.amount ?? 0);
+
+              if (sameAmount) {
+                skippedCount += 1;
+                continue;
+              }
+
+              reviewItems.push({
+                externalNumber,
+                externalConceptKey: row.externalConceptKey ?? null,
+                externalName: String(row.externalName || ""),
+                occurredAt: new Date(row.occurredAt),
+                amount: Number(row.amount ?? 0),
+                reason: "POSSIBLE_UPDATE",
+                matchedCount: 1,
+                matchedExternalNumber: String(candidate.externalNumber || ""),
+                matchedAmount: Number(candidate.amount ?? 0),
+              });
+              continue;
+            }
+          }
+
           movementsToInsert.push({
             description,
             comments: "",
@@ -722,6 +865,21 @@ export class MovementService {
 
         if (sameAmount && sameSubsubcategory && sameOccurredAt && sameDescription) {
           skippedCount += 1;
+          continue;
+        }
+
+        if (isServoBatch) {
+          reviewItems.push({
+            externalNumber,
+            externalConceptKey: row.externalConceptKey ?? null,
+            externalName: String(row.externalName || ""),
+            occurredAt: new Date(row.occurredAt),
+            amount: Number(row.amount ?? 0),
+            reason: "POSSIBLE_UPDATE",
+            matchedCount: 1,
+            matchedExternalNumber: String(existing.externalNumber || ""),
+            matchedAmount: Number(existing.amount ?? 0),
+          });
           continue;
         }
 
@@ -757,7 +915,8 @@ export class MovementService {
         await MovementModel.bulkWrite(updates);
       }
 
-      batch.status = "PROCESSED";
+      batch.status =
+        reviewItems.length > 0 ? "PROCESSED_WITH_REVIEW" : "PROCESSED";
       await batch.save();
 
       return {
@@ -765,6 +924,8 @@ export class MovementService {
         insertedCount: movementsToInsert.length,
         updatedCount: updates.length,
         skippedCount,
+        reviewRequiredCount: reviewItems.length,
+        reviewItems,
       };
     } catch (error) {
       throw CustomError.internalServer(`${error}`);
@@ -867,8 +1028,16 @@ export class MovementService {
           const formaPago =
             iFormaPago !== undefined ? String(r[iFormaPago] ?? "").trim() : "";
 
+          const servoFingerprint = buildServoFingerprint({
+            occurredAt,
+            conceptKey: externalConceptKey,
+            alumno,
+            matricula,
+            amount,
+          });
+
           return {
-            externalNumber: String(r[0] ?? ""), // “No.” si te sirve
+            externalNumber: servoFingerprint,
             occurredAt,
             externalCategoryRaw: `ServoEscolar:${externalConceptKey}`, // o el texto que quieras
             externalConceptKey,
