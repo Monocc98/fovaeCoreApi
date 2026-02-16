@@ -25,7 +25,14 @@ export class CreateMovementDto {
         if (!description) return ['Missing description'];
 
         if (!Validators.isMongoID(account)) return ['Invalid account ID'];
-        if (!Validators.isMongoID(subsubcategory)) return ['Invalid subsubcategory ID'];
+        const parsedSource = String(source ?? 'MANUAL').toUpperCase();
+        const requiresSubsubcategory = parsedSource !== 'TRANSFER';
+        if (requiresSubsubcategory) {
+            if (!subsubcategory) return ['Missing subsubcategory'];
+            if (!Validators.isMongoID(subsubcategory)) return ['Invalid subsubcategory ID'];
+        } else if (subsubcategory && !Validators.isMongoID(subsubcategory)) {
+            return ['Invalid subsubcategory ID'];
+        }
         
 
         // validar fecha

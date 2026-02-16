@@ -670,6 +670,7 @@ export class HomeService {
                     $and: [
                       { $ne: ["$$fyStart", null] },
                       { $in: ["$account", "$$accountIds"] },
+                      { $ne: ["$source", "TRANSFER"] },
                       { $gte: ["$occurredAt", "$$fyStart"] },
                       { $lt: ["$occurredAt", "$$fyEnd"] },
                     ],

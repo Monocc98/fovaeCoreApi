@@ -14,9 +14,6 @@ export class TransferService {
   async createTransfer(createTransferDto: CreateTransferDto) {
     const fromAccountId = Validators.convertToUid(createTransferDto.fromAccount);
     const toAccountId = Validators.convertToUid(createTransferDto.toAccount);
-    const subsubcategoryId = Validators.convertToUid(
-      createTransferDto.subsubcategory
-    );
 
     const fromAccount = await AccountModel.findById(fromAccountId).lean();
     const toAccount = await AccountModel.findById(toAccountId).lean();
@@ -106,7 +103,6 @@ export class TransferService {
               recordedAt: new Date(),
               amount: -Math.abs(createTransferDto.amount),
               source: "TRANSFER",
-              subsubcategory: subsubcategoryId,
               transfererId: createTransferDto.transfererId,
               transfer: transfer._id,
               transferDirection: "OUT",
@@ -121,7 +117,6 @@ export class TransferService {
               recordedAt: new Date(),
               amount: Math.abs(createTransferDto.amount),
               source: "TRANSFER",
-              subsubcategory: subsubcategoryId,
               transfererId: createTransferDto.transfererId,
               transfer: transfer._id,
               transferDirection: "IN",

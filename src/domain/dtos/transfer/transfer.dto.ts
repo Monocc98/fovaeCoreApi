@@ -9,7 +9,6 @@ export class CreateTransferDto {
     public readonly currency: string,
     public readonly occurredAt: Date,
     public readonly description: string,
-    public readonly subsubcategory: string,
     public readonly comments?: string,
     public readonly transfererId?: string,
     public readonly idempotencyKey?: string
@@ -24,7 +23,6 @@ export class CreateTransferDto {
       currency,
       occurredAt,
       description,
-      subsubcategory,
       comments,
       transfererId,
       idempotencyKey,
@@ -35,13 +33,10 @@ export class CreateTransferDto {
     if (amount === undefined || amount === null) return ["Missing amount"];
     if (!occurredAt) return ["Missing occurredAt"];
     if (!description) return ["Missing description"];
-    if (!subsubcategory) return ["Missing subsubcategory"];
 
     if (company && !Validators.isMongoID(company)) return ["Invalid company ID"];
     if (!Validators.isMongoID(fromAccount)) return ["Invalid fromAccount ID"];
     if (!Validators.isMongoID(toAccount)) return ["Invalid toAccount ID"];
-    if (!Validators.isMongoID(subsubcategory))
-      return ["Invalid subsubcategory ID"];
 
     if (fromAccount === toAccount) {
       return ["fromAccount and toAccount must be different"];
@@ -69,7 +64,6 @@ export class CreateTransferDto {
         parsedCurrency,
         occurredDate,
         String(description),
-        subsubcategory,
         comments ? String(comments) : undefined,
         transfererId ? String(transfererId) : undefined,
         idempotencyKey ? String(idempotencyKey) : undefined

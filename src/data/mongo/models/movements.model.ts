@@ -37,7 +37,9 @@ const movementsSchema = new mongoose.Schema({
   subsubcategory: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Subsubcategory',
-    required: true,
+    required: function (this: any) {
+      return this.source !== 'TRANSFER';
+    },
   },
   tags: {
     type: [String],
