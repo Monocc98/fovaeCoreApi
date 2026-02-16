@@ -92,9 +92,19 @@ movementsSchema.set('toJSON', {
   virtuals: true,
   versionKey: false,
   transform: (_doc, ret: Record<string, any>) => {
+    const occurredAt =
+      ret.occurredAt !== undefined && ret.occurredAt !== null
+        ? new Date(ret.occurredAt)
+        : null;
+    const occurredOn =
+      occurredAt && !Number.isNaN(occurredAt.getTime())
+        ? occurredAt.toISOString().slice(0, 10)
+        : null;
+
     // elimina _id sin usar delete (TS estricto)
     const { _id, ...obj } = ret;
     obj.id = _id?.toString?.() ?? _id;
+    obj.occurredOn = occurredOn;
     return obj;
   },
 })
