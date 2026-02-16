@@ -21,6 +21,13 @@ export class TransferService {
     if (!fromAccount) throw CustomError.notFound("fromAccount not found");
     if (!toAccount) throw CustomError.notFound("toAccount not found");
 
+    const fromAccountName = String((fromAccount as any).name ?? createTransferDto.fromAccount);
+    const toAccountName = String((toAccount as any).name ?? createTransferDto.toAccount);
+    const normalizedDescription = String(createTransferDto.description ?? "").trim();
+    const movementComments = createTransferDto.comments
+      ? `${normalizedDescription}\n${createTransferDto.comments}`
+      : normalizedDescription;
+
     const inferredCompanyId = String(fromAccount.company);
     if (String(toAccount.company) !== inferredCompanyId) {
       throw CustomError.badRequest("Accounts belong to different companies");
@@ -95,8 +102,8 @@ export class TransferService {
         const movementDocs = await MovementModel.create(
           [
             {
-              description: createTransferDto.description,
-              comments: createTransferDto.comments,
+              description: `Transferencia a ${toAccountName}`,
+              comments: movementComments,
               account: fromAccountId,
               counterpartyAccount: toAccountId,
               occurredAt: createTransferDto.occurredAt,
@@ -109,8 +116,8 @@ export class TransferService {
               tags: [],
             },
             {
-              description: createTransferDto.description,
-              comments: createTransferDto.comments,
+              description: `Transferencia de ${fromAccountName}`,
+              comments: movementComments,
               account: toAccountId,
               counterpartyAccount: fromAccountId,
               occurredAt: createTransferDto.occurredAt,
