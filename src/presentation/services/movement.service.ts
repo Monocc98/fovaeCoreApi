@@ -5,8 +5,9 @@ import {
   findHeaderRowIndex,
   buildHeaderMap,
 } from "../../config";
-import { MovementModel } from "../../data";
+import { AccountModel, MovementModel } from "../../data";
 import { ConceptRuleModel } from "../../data/mongo/models/conceptRule.model";
+import { FiscalYear_CompanyModel } from "../../data/mongo/models/fiscalYear_Company.model";
 import { MovementImportBatchModel } from "../../data/mongo/models/movementImportBatch.model";
 import {
   CreateMovementDto,
@@ -186,9 +187,71 @@ export class MovementService {
         throw CustomError.badRequest("Invalid account ID");
       const accountIdMongo = Validators.convertToUid(idAccount);
 
-      const movements = await MovementModel.find({
-        account: accountIdMongo,
-      }).populate("subsubcategory");
+      const account = await AccountModel.findById(accountIdMongo)
+        .select("company")
+        .lean();
+      if (!account) throw CustomError.notFound("Account not found");
+
+      const now = new Date();
+      const [currentFiscalYear] = await FiscalYear_CompanyModel.aggregate([
+        { $match: { company: account.company } },
+        {
+          $lookup: {
+            from: "fiscalyears",
+            localField: "fiscalYear",
+            foreignField: "_id",
+            as: "fy",
+          },
+        },
+        { $addFields: { fy: { $arrayElemAt: ["$fy", 0] } } },
+        {
+          $addFields: {
+            fyEnd: {
+              $ifNull: [
+                "$fy.endDate",
+                {
+                  $dateAdd: {
+                    startDate: "$fy.startDate",
+                    unit: "month",
+                    amount: 12,
+                  },
+                },
+              ],
+            },
+          },
+        },
+        {
+          $match: {
+            $expr: {
+              $and: [
+                { $lte: ["$fy.startDate", now] },
+                { $gt: ["$fyEnd", now] },
+              ],
+            },
+          },
+        },
+        { $sort: { "fy.startDate": -1 } },
+        { $limit: 1 },
+        {
+          $project: {
+            _id: 0,
+            fyStart: "$fy.startDate",
+            fyEnd: 1,
+          },
+        },
+      ]);
+
+      const movementFilter: any = { account: accountIdMongo };
+      if (currentFiscalYear?.fyStart && currentFiscalYear?.fyEnd) {
+        movementFilter.occurredAt = {
+          $gte: currentFiscalYear.fyStart,
+          $lt: currentFiscalYear.fyEnd,
+        };
+      }
+
+      const movements = await MovementModel.find(movementFilter).populate(
+        "subsubcategory"
+      );
 
       const balance = movements.reduce(
         (acc: number, movement: any) => acc + Number(movement.amount ?? 0),

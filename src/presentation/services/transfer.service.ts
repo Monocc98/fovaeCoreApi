@@ -11,6 +11,23 @@ import { CreateTransferDto, CustomError } from "../../domain";
 export class TransferService {
   constructor() {}
 
+  private mapTransferView(transfer: any) {
+    const fromAccountName =
+      typeof transfer?.fromAccount === "object" && transfer?.fromAccount
+        ? String((transfer.fromAccount as any).name ?? "")
+        : "";
+    const toAccountName =
+      typeof transfer?.toAccount === "object" && transfer?.toAccount
+        ? String((transfer.toAccount as any).name ?? "")
+        : "";
+
+    return {
+      ...transfer,
+      fromAccountName,
+      toAccountName,
+    };
+  }
+
   private isTransactionNotSupportedError(error: unknown): boolean {
     return String(error).includes(
       "Transaction numbers are only allowed on a replica set member or mongos"
@@ -234,12 +251,12 @@ export class TransferService {
       }
 
       const companyId = Validators.convertToUid(idCompany);
-      const transfers = await TransferModel.find({ company: companyId })
+      const transfers: any[] = await TransferModel.find({ company: companyId })
         .sort({ occurredAt: -1, recordedAt: -1 })
         .populate("fromAccount toAccount")
         .lean();
 
-      return { transfers };
+      return { transfers: transfers.map((transfer) => this.mapTransferView(transfer)) };
     } catch (error) {
       if (error instanceof CustomError) throw error;
       throw CustomError.internalServer(`${error}`);
@@ -268,7 +285,7 @@ export class TransferService {
         .populate("account counterpartyAccount")
         .lean();
 
-      return { transfer, movements };
+      return { transfer: this.mapTransferView(transfer), movements };
     } catch (error) {
       if (error instanceof CustomError) throw error;
       throw CustomError.internalServer(`${error}`);
