@@ -11,6 +11,114 @@ import { CreateTransferDto, CustomError } from "../../domain";
 export class TransferService {
   constructor() {}
 
+  private isTransactionNotSupportedError(error: unknown): boolean {
+    return String(error).includes(
+      "Transaction numbers are only allowed on a replica set member or mongos"
+    );
+  }
+
+  private async createTransferWithMovements(params: {
+    companyId: mongoose.Types.ObjectId;
+    fromAccountId: mongoose.Types.ObjectId;
+    toAccountId: mongoose.Types.ObjectId;
+    createTransferDto: CreateTransferDto;
+    fromAccountName: string;
+    toAccountName: string;
+    movementComments: string;
+    session?: mongoose.ClientSession;
+  }) {
+    const transferPayload = {
+      company: params.companyId,
+      fromAccount: params.fromAccountId,
+      toAccount: params.toAccountId,
+      amount: params.createTransferDto.amount,
+      currency: params.createTransferDto.currency,
+      occurredAt: params.createTransferDto.occurredAt,
+      recordedAt: new Date(),
+      description: params.createTransferDto.description,
+      comments: params.createTransferDto.comments,
+      transfererId: params.createTransferDto.transfererId,
+      idempotencyKey: params.createTransferDto.idempotencyKey,
+      status: "COMPLETED",
+    };
+
+    const movementPayloadBase = {
+      comments: params.movementComments,
+      occurredAt: params.createTransferDto.occurredAt,
+      recordedAt: new Date(),
+      source: "TRANSFER",
+      transfererId: params.createTransferDto.transfererId,
+      tags: [],
+    };
+
+    if (params.session) {
+      const transferDocs = await TransferModel.create([transferPayload], {
+        session: params.session,
+      });
+      const transfer = transferDocs[0];
+      if (!transfer) {
+        throw CustomError.internalServer("Transfer creation failed");
+      }
+
+      const movementDocs = await MovementModel.create(
+        [
+          {
+            ...movementPayloadBase,
+            description: `Transferencia a ${params.toAccountName}`,
+            account: params.fromAccountId,
+            counterpartyAccount: params.toAccountId,
+            amount: -Math.abs(params.createTransferDto.amount),
+            transfer: transfer._id,
+            transferDirection: "OUT",
+          },
+          {
+            ...movementPayloadBase,
+            description: `Transferencia de ${params.fromAccountName}`,
+            account: params.toAccountId,
+            counterpartyAccount: params.fromAccountId,
+            amount: Math.abs(params.createTransferDto.amount),
+            transfer: transfer._id,
+            transferDirection: "IN",
+          },
+        ],
+        { session: params.session }
+      );
+
+      return { transfer, movements: movementDocs };
+    }
+
+    const transfer = await TransferModel.create(transferPayload);
+
+    try {
+      const movements = await MovementModel.create([
+        {
+          ...movementPayloadBase,
+          description: `Transferencia a ${params.toAccountName}`,
+          account: params.fromAccountId,
+          counterpartyAccount: params.toAccountId,
+          amount: -Math.abs(params.createTransferDto.amount),
+          transfer: transfer._id,
+          transferDirection: "OUT",
+        },
+        {
+          ...movementPayloadBase,
+          description: `Transferencia de ${params.fromAccountName}`,
+          account: params.toAccountId,
+          counterpartyAccount: params.fromAccountId,
+          amount: Math.abs(params.createTransferDto.amount),
+          transfer: transfer._id,
+          transferDirection: "IN",
+        },
+      ]);
+
+      return { transfer, movements };
+    } catch (error) {
+      await MovementModel.deleteMany({ transfer: transfer._id });
+      await TransferModel.findByIdAndDelete(transfer._id);
+      throw error;
+    }
+  }
+
   async createTransfer(createTransferDto: CreateTransferDto) {
     const fromAccountId = Validators.convertToUid(createTransferDto.fromAccount);
     const toAccountId = Validators.convertToUid(createTransferDto.toAccount);
@@ -74,67 +182,19 @@ export class TransferService {
       let createdMovements: any[] = [];
 
       await session.withTransaction(async () => {
-        const transferDocs = await TransferModel.create(
-          [
-            {
-              company: companyId,
-              fromAccount: fromAccountId,
-              toAccount: toAccountId,
-              amount: createTransferDto.amount,
-              currency: createTransferDto.currency,
-              occurredAt: createTransferDto.occurredAt,
-              recordedAt: new Date(),
-              description: createTransferDto.description,
-              comments: createTransferDto.comments,
-              transfererId: createTransferDto.transfererId,
-              idempotencyKey: createTransferDto.idempotencyKey,
-              status: "COMPLETED",
-            },
-          ],
-          { session }
-        );
+        const result = await this.createTransferWithMovements({
+          companyId,
+          fromAccountId,
+          toAccountId,
+          createTransferDto,
+          fromAccountName,
+          toAccountName,
+          movementComments,
+          session,
+        });
 
-        const transfer = transferDocs[0];
-        if (!transfer) {
-          throw CustomError.internalServer("Transfer creation failed");
-        }
-
-        const movementDocs = await MovementModel.create(
-          [
-            {
-              description: `Transferencia a ${toAccountName}`,
-              comments: movementComments,
-              account: fromAccountId,
-              counterpartyAccount: toAccountId,
-              occurredAt: createTransferDto.occurredAt,
-              recordedAt: new Date(),
-              amount: -Math.abs(createTransferDto.amount),
-              source: "TRANSFER",
-              transfererId: createTransferDto.transfererId,
-              transfer: transfer._id,
-              transferDirection: "OUT",
-              tags: [],
-            },
-            {
-              description: `Transferencia de ${fromAccountName}`,
-              comments: movementComments,
-              account: toAccountId,
-              counterpartyAccount: fromAccountId,
-              occurredAt: createTransferDto.occurredAt,
-              recordedAt: new Date(),
-              amount: Math.abs(createTransferDto.amount),
-              source: "TRANSFER",
-              transfererId: createTransferDto.transfererId,
-              transfer: transfer._id,
-              transferDirection: "IN",
-              tags: [],
-            },
-          ],
-          { session }
-        );
-
-        createdTransfer = transfer;
-        createdMovements = movementDocs;
+        createdTransfer = result.transfer;
+        createdMovements = result.movements;
       });
 
       return {
@@ -142,6 +202,24 @@ export class TransferService {
         movements: createdMovements,
       };
     } catch (error) {
+      if (this.isTransactionNotSupportedError(error)) {
+        const fallbackResult = await this.createTransferWithMovements({
+          companyId,
+          fromAccountId,
+          toAccountId,
+          createTransferDto,
+          fromAccountName,
+          toAccountName,
+          movementComments,
+        });
+
+        return {
+          transfer: fallbackResult.transfer,
+          movements: fallbackResult.movements,
+          transactionFallback: true,
+        };
+      }
+
       if (error instanceof CustomError) throw error;
       throw CustomError.internalServer(`${error}`);
     } finally {
