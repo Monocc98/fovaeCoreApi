@@ -11,6 +11,7 @@ import { BudgetRoutes } from './budget/routes';
 import { FiscalYearRoutes } from './fiscalYear/routes';
 import { FiscalYear_CompanyRoutes } from './fiscalYear_Company/routes';
 import { AccountPermissionsRoutes } from './accountPermissions/routes';
+import { TransfersRoutes } from './transfers/routes';
 
 
 
@@ -35,10 +36,10 @@ export class AppRoutes {
     router.use('/api/fiscalYear', FiscalYearRoutes.routes);
     router.use('/api/fiscalYearCompany', FiscalYear_CompanyRoutes.routes);
     router.use('/api/accountPermissions', AccountPermissionsRoutes.routes);
+    router.use('/api/transfers', TransfersRoutes.routes);
 
     return router;
   }
 
 
 }
-

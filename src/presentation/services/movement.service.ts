@@ -28,6 +28,33 @@ interface SolucionFactibleRow {
   Monto: string;
 }
 
+const toIdString = (value: any): string | null => {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  if (typeof value?.toString === "function" && value.toString() !== "[object Object]") {
+    return value.toString();
+  }
+  if (typeof value?.id === "string") return value.id;
+  if (value?._id) return toIdString(value._id);
+  return null;
+};
+
+const extractRuleTreeIds = (rule: any) => {
+  const subsubcategoryRef = rule?.subsubcategory;
+  const subcategoryRef = subsubcategoryRef?.parent;
+  const categoryRef = subcategoryRef?.parent;
+
+  const subsubcategoryId = toIdString(subsubcategoryRef);
+  const subcategoryId = toIdString(subcategoryRef);
+  const categoryId = toIdString(categoryRef);
+
+  return {
+    subsubcategoryId,
+    subcategoryId,
+    categoryId,
+  };
+};
+
 const normalizeFingerprintPart = (value: unknown) =>
   String(value ?? "")
     .normalize("NFD")
@@ -286,7 +313,20 @@ export class MovementService {
       const existingRules = await ConceptRuleModel.find({
         account: batch.account,
         externalConceptKey: { $in: conceptKeys },
-      }).lean();
+      })
+        .populate({
+          path: "subsubcategory",
+          select: "parent",
+          populate: {
+            path: "parent",
+            select: "parent",
+            populate: {
+              path: "parent",
+              select: "_id",
+            },
+          },
+        })
+        .lean();
 
       const rulesByKey = new Map<string, any>();
       for (const rule of existingRules) {
@@ -302,15 +342,20 @@ export class MovementService {
           externalConceptKey: key,
           externalCategoryRaw: info.externalCategoryRaw,
           count: info.count,
-          existingRule: rule
-            ? {
-                id: String(rule._id),
-                subsubcategory: rule.subsubcategory,
-                timesConfirmed: rule.timesConfirmed,
-                timesCorrected: rule.timesCorrected,
-                locked: rule.locked,
-              }
-            : null,
+          existingRule: (() => {
+            if (!rule) return null;
+            const tree = extractRuleTreeIds(rule);
+            return {
+              id: String(rule._id),
+              subsubcategory: tree.subsubcategoryId,
+              subsubcategoryId: tree.subsubcategoryId,
+              subcategoryId: tree.subcategoryId,
+              categoryId: tree.categoryId,
+              timesConfirmed: rule.timesConfirmed,
+              timesCorrected: rule.timesCorrected,
+              locked: rule.locked,
+            };
+          })(),
         };
       });
 
@@ -595,7 +640,20 @@ export class MovementService {
       const existingRules = await ConceptRuleModel.find({
         account: accountIdMongo,
         externalConceptKey: { $in: conceptKeys },
-      }).lean();
+      })
+        .populate({
+          path: "subsubcategory",
+          select: "parent",
+          populate: {
+            path: "parent",
+            select: "parent",
+            populate: {
+              path: "parent",
+              select: "_id",
+            },
+          },
+        })
+        .lean();
 
       const rulesByKey = new Map<string, any>();
       for (const rule of existingRules) {
@@ -610,15 +668,20 @@ export class MovementService {
           externalConceptKey: key,
           externalCategoryRaw: info.externalCategoryRaw,
           count: info.count,
-          existingRule: rule
-            ? {
-                id: rule._id,
-                subsubcategory: rule.subsubcategory,
-                timesConfirmed: rule.timesConfirmed,
-                timesCorrected: rule.timesCorrected,
-                locked: rule.locked,
-              }
-            : null,
+          existingRule: (() => {
+            if (!rule) return null;
+            const tree = extractRuleTreeIds(rule);
+            return {
+              id: rule._id,
+              subsubcategory: tree.subsubcategoryId,
+              subsubcategoryId: tree.subsubcategoryId,
+              subcategoryId: tree.subcategoryId,
+              categoryId: tree.categoryId,
+              timesConfirmed: rule.timesConfirmed,
+              timesCorrected: rule.timesCorrected,
+              locked: rule.locked,
+            };
+          })(),
         };
       });
 
@@ -1076,7 +1139,20 @@ export class MovementService {
       const existingRules = await ConceptRuleModel.find({
         account: accountIdMongo,
         externalConceptKey: { $in: conceptKeys },
-      }).lean();
+      })
+        .populate({
+          path: "subsubcategory",
+          select: "parent",
+          populate: {
+            path: "parent",
+            select: "parent",
+            populate: {
+              path: "parent",
+              select: "_id",
+            },
+          },
+        })
+        .lean();
 
       const rulesByKey = new Map(
         existingRules.map((r: any) => [r.externalConceptKey, r])
@@ -1090,15 +1166,20 @@ export class MovementService {
           externalConceptKey: key,
           externalCategoryRaw: info.externalCategoryRaw,
           count: info.count,
-          existingRule: rule
-            ? {
-                id: rule._id,
-                subsubcategory: rule.subsubcategory,
-                timesConfirmed: rule.timesConfirmed,
-                timesCorrected: rule.timesCorrected,
-                locked: rule.locked,
-              }
-            : null,
+          existingRule: (() => {
+            if (!rule) return null;
+            const tree = extractRuleTreeIds(rule);
+            return {
+              id: rule._id,
+              subsubcategory: tree.subsubcategoryId,
+              subsubcategoryId: tree.subsubcategoryId,
+              subcategoryId: tree.subcategoryId,
+              categoryId: tree.categoryId,
+              timesConfirmed: rule.timesConfirmed,
+              timesCorrected: rule.timesCorrected,
+              locked: rule.locked,
+            };
+          })(),
         };
       });
 

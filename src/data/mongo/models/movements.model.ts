@@ -32,7 +32,7 @@ const movementsSchema = new mongoose.Schema({
   source: {
     type: String,
     default: 'MANUAL',
-    enum: ['MANUAL', 'SOLUCION_FACTIBLE', 'OTRO'],
+    enum: ['MANUAL', 'SOLUCION_FACTIBLE', 'TRANSFER', 'OTRO'],
   },
   subsubcategory: {
     type: mongoose.Schema.Types.ObjectId,
@@ -61,6 +61,18 @@ const movementsSchema = new mongoose.Schema({
   importBatchId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'MovementImportBatch',
+  },
+  transfer: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Transfer',
+  },
+  counterpartyAccount: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Account',
+  },
+  transferDirection: {
+    type: String,
+    enum: ['OUT', 'IN'],
   },
 });
 
