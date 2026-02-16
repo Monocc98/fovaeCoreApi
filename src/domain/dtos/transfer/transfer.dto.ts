@@ -2,7 +2,7 @@ import { Validators } from "../../../config";
 
 export class CreateTransferDto {
   private constructor(
-    public readonly company: string,
+    public readonly company: string | undefined,
     public readonly fromAccount: string,
     public readonly toAccount: string,
     public readonly amount: number,
@@ -30,7 +30,6 @@ export class CreateTransferDto {
       idempotencyKey,
     } = object;
 
-    if (!company) return ["Missing company"];
     if (!fromAccount) return ["Missing fromAccount"];
     if (!toAccount) return ["Missing toAccount"];
     if (amount === undefined || amount === null) return ["Missing amount"];
@@ -38,7 +37,7 @@ export class CreateTransferDto {
     if (!description) return ["Missing description"];
     if (!subsubcategory) return ["Missing subsubcategory"];
 
-    if (!Validators.isMongoID(company)) return ["Invalid company ID"];
+    if (company && !Validators.isMongoID(company)) return ["Invalid company ID"];
     if (!Validators.isMongoID(fromAccount)) return ["Invalid fromAccount ID"];
     if (!Validators.isMongoID(toAccount)) return ["Invalid toAccount ID"];
     if (!Validators.isMongoID(subsubcategory))

@@ -12,15 +12,11 @@ export class TransferService {
   constructor() {}
 
   async createTransfer(createTransferDto: CreateTransferDto) {
-    const companyId = Validators.convertToUid(createTransferDto.company);
     const fromAccountId = Validators.convertToUid(createTransferDto.fromAccount);
     const toAccountId = Validators.convertToUid(createTransferDto.toAccount);
     const subsubcategoryId = Validators.convertToUid(
       createTransferDto.subsubcategory
     );
-
-    const company = await CompanyModel.findById(companyId).lean();
-    if (!company) throw CustomError.notFound("Company not found");
 
     const fromAccount = await AccountModel.findById(fromAccountId).lean();
     const toAccount = await AccountModel.findById(toAccountId).lean();
@@ -28,12 +24,21 @@ export class TransferService {
     if (!fromAccount) throw CustomError.notFound("fromAccount not found");
     if (!toAccount) throw CustomError.notFound("toAccount not found");
 
-    if (String(fromAccount.company) !== createTransferDto.company) {
-      throw CustomError.badRequest("fromAccount does not belong to company");
+    const inferredCompanyId = String(fromAccount.company);
+    if (String(toAccount.company) !== inferredCompanyId) {
+      throw CustomError.badRequest("Accounts belong to different companies");
     }
 
-    if (String(toAccount.company) !== createTransferDto.company) {
-      throw CustomError.badRequest("toAccount does not belong to company");
+    if (createTransferDto.company && createTransferDto.company !== inferredCompanyId) {
+      throw CustomError.badRequest(
+        "company does not match the company of the provided accounts"
+      );
+    }
+
+    const companyId = Validators.convertToUid(inferredCompanyId);
+    const company = await CompanyModel.findById(companyId).lean();
+    if (!company) {
+      throw CustomError.notFound("Company not found");
     }
 
     if (createTransferDto.idempotencyKey) {
