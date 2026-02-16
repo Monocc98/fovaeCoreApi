@@ -1,4 +1,4 @@
-import { Validators } from "../../../config";
+import { parseDateOnly, Validators } from "../../../config";
 
 export class CreateTransferDto {
   private constructor(
@@ -46,8 +46,8 @@ export class CreateTransferDto {
     if (Number.isNaN(parsedAmount)) return ["Invalid amount"];
     if (parsedAmount <= 0) return ["Amount must be greater than 0"];
 
-    const occurredDate = new Date(occurredAt);
-    if (Number.isNaN(occurredDate.getTime())) return ["Invalid occurredAt date"];
+    const occurredDate = parseDateOnly(occurredAt);
+    if (!occurredDate) return ["Invalid occurredAt date"];
 
     const parsedCurrency = String(currency || "MXN")
       .trim()

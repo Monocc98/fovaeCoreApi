@@ -2,6 +2,9 @@ import {
   getExternalConceptKeyFromCategory,
   Validators,
   parseDateDDMMYYYY,
+  parseDateOnly,
+  toUtcDateKey,
+  toUtcDateOnly,
   findHeaderRowIndex,
   buildHeaderMap,
 } from "../../config";
@@ -64,13 +67,6 @@ const normalizeFingerprintPart = (value: unknown) =>
     .trim()
     .toUpperCase();
 
-const toLocalDateKey = (value: Date) => {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
 const buildServoFingerprint = (params: {
   occurredAt: Date;
   conceptKey: string;
@@ -81,7 +77,7 @@ const buildServoFingerprint = (params: {
   const amountKey = Number(params.amount ?? 0).toFixed(2);
   return [
     "SERVO",
-    toLocalDateKey(params.occurredAt),
+    toUtcDateKey(params.occurredAt),
     normalizeFingerprintPart(params.conceptKey),
     normalizeFingerprintPart(params.alumno),
     normalizeFingerprintPart(params.matricula),
@@ -95,7 +91,7 @@ const buildServoReviewIdentity = (params: {
   alumno: string;
 }) =>
   [
-    toLocalDateKey(new Date(params.occurredAt)),
+    toUtcDateKey(new Date(params.occurredAt)),
     normalizeFingerprintPart(params.conceptKey),
     normalizeFingerprintPart(params.alumno),
   ].join("|");
@@ -867,9 +863,7 @@ export class MovementService {
         const datesForLookup = Array.from(
           new Set(
             rows.map((row) => {
-              const d = new Date(row.occurredAt);
-              d.setHours(0, 0, 0, 0);
-              return d.getTime();
+              return toUtcDateOnly(new Date(row.occurredAt)).getTime();
             })
           )
         ).map((t) => new Date(t));
@@ -917,7 +911,7 @@ export class MovementService {
         if (!existing) {
           if (isServoBatch) {
             const identityKey = buildServoReviewIdentity({
-              occurredAt: new Date(row.occurredAt),
+              occurredAt: toUtcDateOnly(new Date(row.occurredAt)),
               conceptKey: String(row.externalConceptKey || "SIN_CLAVE"),
               alumno: String(row.externalName || ""),
             });
@@ -928,7 +922,7 @@ export class MovementService {
                 externalNumber,
                 externalConceptKey: row.externalConceptKey ?? null,
                 externalName: String(row.externalName || ""),
-                occurredAt: new Date(row.occurredAt),
+                occurredAt: toUtcDateOnly(new Date(row.occurredAt)),
                 amount: Number(row.amount ?? 0),
                 reason: "AMBIGUOUS_MATCH",
                 matchedCount: candidates.length,
@@ -950,7 +944,7 @@ export class MovementService {
                 externalNumber,
                 externalConceptKey: row.externalConceptKey ?? null,
                 externalName: String(row.externalName || ""),
-                occurredAt: new Date(row.occurredAt),
+                occurredAt: toUtcDateOnly(new Date(row.occurredAt)),
                 amount: Number(row.amount ?? 0),
                 reason: "POSSIBLE_UPDATE",
                 matchedCount: 1,
@@ -985,8 +979,8 @@ export class MovementService {
         const sameSubsubcategory =
           String(existing.subsubcategory) === String(subsubcategoryId);
         const sameOccurredAt =
-          new Date(existing.occurredAt).getTime() ===
-          new Date(row.occurredAt).getTime();
+          toUtcDateOnly(new Date(existing.occurredAt)).getTime() ===
+          toUtcDateOnly(new Date(row.occurredAt)).getTime();
         const sameDescription = String(existing.description ?? "") === description;
 
         if (sameAmount && sameSubsubcategory && sameOccurredAt && sameDescription) {
@@ -999,7 +993,7 @@ export class MovementService {
             externalNumber,
             externalConceptKey: row.externalConceptKey ?? null,
             externalName: String(row.externalName || ""),
-            occurredAt: new Date(row.occurredAt),
+            occurredAt: toUtcDateOnly(new Date(row.occurredAt)),
             amount: Number(row.amount ?? 0),
             reason: "POSSIBLE_UPDATE",
             matchedCount: 1,
@@ -1129,7 +1123,8 @@ export class MovementService {
               parseDateDDMMYYYY(occurredAtRaw) ?? new Date(occurredAtRaw);
           }
 
-          if (!occurredAt || isNaN(occurredAt.getTime())) {
+          const occurredAtDateOnly = parseDateOnly(occurredAt);
+          if (!occurredAtDateOnly) {
             throw CustomError.badRequest(
               `Fecha inválida en fila Excel ${headerRowIndex + 2 + pos}`
             );
@@ -1155,7 +1150,7 @@ export class MovementService {
             iFormaPago !== undefined ? String(r[iFormaPago] ?? "").trim() : "";
 
           const servoFingerprint = buildServoFingerprint({
-            occurredAt,
+            occurredAt: occurredAtDateOnly,
             conceptKey: externalConceptKey,
             alumno,
             matricula,
@@ -1164,7 +1159,7 @@ export class MovementService {
 
           return {
             externalNumber: servoFingerprint,
-            occurredAt,
+            occurredAt: occurredAtDateOnly,
             externalCategoryRaw: `ServoEscolar:${externalConceptKey}`, // o el texto que quieras
             externalConceptKey,
             externalName: alumno, // aquí guardas el alumno para trazabilidad

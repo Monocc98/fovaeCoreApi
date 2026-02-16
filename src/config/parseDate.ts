@@ -1,3 +1,5 @@
+import { toUtcDateOnly } from "./dateOnly";
+
 export const parseDateDDMMYYYY = (value: string): Date | null => {
   if (!value) return null;
 
@@ -12,7 +14,7 @@ export const parseDateDDMMYYYY = (value: string): Date | null => {
   if (!day || !month || !year) return null;
 
   // new Date(year, monthIndex, day) → monthIndex es 0-based
-  const d = new Date(year, month - 1, day);
+  const d = new Date(Date.UTC(year, month - 1, day));
 
-  return isNaN(d.getTime()) ? null : d;
+  return isNaN(d.getTime()) ? null : toUtcDateOnly(d);
 };

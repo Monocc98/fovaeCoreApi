@@ -1,4 +1,4 @@
-import { Validators } from "../../../config";
+import { parseDateOnly, Validators } from "../../../config";
 
 
 export class CreateMovementDto {
@@ -36,14 +36,14 @@ export class CreateMovementDto {
         
 
         // validar fecha
-        const occurredDate = new Date(occurredAt);
-        if (isNaN(occurredDate.getTime())) return ['Invalid occurredAt date'];
+        const occurredDate = parseDateOnly(occurredAt);
+        if (!occurredDate) return ['Invalid occurredAt date'];
 
         // validar número
         const parsedAmount = Number(amount);
         if (isNaN(parsedAmount)) return ['Invalid amount'];
         
-        return [undefined,  new CreateMovementDto( description, account, occurredAt, amount, source, subsubcategory, transfererId, comments )]
+        return [undefined,  new CreateMovementDto( description, account, occurredDate, parsedAmount, source, subsubcategory, transfererId, comments )]
 
     }
 }
@@ -71,14 +71,14 @@ export class UpdateMovementDto {
 
         if (!Validators.isMongoID(subsubcategory)) return ['Invalid category ID'];
 
-        const occurredDate = new Date(occurredAt);
-        if (isNaN(occurredDate.getTime())) return ['Invalid occurredAt date'];
+        const occurredDate = parseDateOnly(occurredAt);
+        if (!occurredDate) return ['Invalid occurredAt date'];
 
         // validar número
         const parsedAmount = Number(amount);
         if (isNaN(parsedAmount)) return ['Invalid amount'];
         
-        return [undefined,  new UpdateMovementDto( description, amount, occurredAt, subsubcategory, transfererId, comments )]
+        return [undefined,  new UpdateMovementDto( description, parsedAmount, occurredDate, subsubcategory, transfererId, comments )]
 
     }
 
