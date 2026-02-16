@@ -186,7 +186,7 @@ export class TransferService {
           .lean();
 
         return {
-          transfer: existingTransfer,
+          transfer: this.mapTransferView(existingTransfer),
           movements,
           idempotentReplay: true,
         };
@@ -215,7 +215,11 @@ export class TransferService {
       });
 
       return {
-        transfer: createdTransfer,
+        transfer: {
+          ...createdTransfer?.toJSON?.() ?? createdTransfer,
+          fromAccountName,
+          toAccountName,
+        },
         movements: createdMovements,
       };
     } catch (error) {
@@ -231,7 +235,11 @@ export class TransferService {
         });
 
         return {
-          transfer: fallbackResult.transfer,
+          transfer: {
+            ...fallbackResult.transfer?.toJSON?.() ?? fallbackResult.transfer,
+            fromAccountName,
+            toAccountName,
+          },
           movements: fallbackResult.movements,
           transactionFallback: true,
         };
