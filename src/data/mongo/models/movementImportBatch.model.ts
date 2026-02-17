@@ -15,12 +15,23 @@ const movementImportBatchSchema = new mongoose.Schema({
   },
   rows: [
     {
+      account: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Account',
+      },
+      sourceAccountLabel: String,
       externalNumber: String,
       occurredAt: Date,
       externalCategoryRaw: String,
       externalConceptKey: String,
       externalName: String,
       amount: Number,
+      transferRefExternalNumber: String,
+      isTransferCandidate: {
+        type: Boolean,
+        default: false,
+      },
+      transferPairKey: String,
     },
   ],
   status: {

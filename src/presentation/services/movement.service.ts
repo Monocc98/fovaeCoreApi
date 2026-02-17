@@ -23,14 +23,114 @@ import { parse } from "csv-parse/sync";
 import * as XLSX from "xlsx";
 import type { Express } from "express";
 import { ImportSolucionFactibleDto } from "../../domain/dtos/movement/ImportSolucionFactible.dto";
+import { TransferService } from "./transfer.service";
 
 interface SolucionFactibleRow {
+  Cuenta: string;
   Numero: string;
   Fecha: string;
   Categoria: string;
   Nombre: string;
   Monto: string;
 }
+
+interface SolucionFactibleSection {
+  label: string;
+  rows: Record<string, string>[];
+}
+
+const normalizeSfHeader = (value: string) =>
+  String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim();
+
+const normalizeSfCell = (value: unknown) => String(value ?? "").trim();
+
+const parseSolucionFactibleSections = (csvContent: string): SolucionFactibleSection[] => {
+  const allLines = csvContent
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim() !== "");
+
+  const sections: SolucionFactibleSection[] = [];
+  let i = 0;
+
+  while (i < allLines.length) {
+    const line = allLines[i] ?? "";
+    const normalizedLine = normalizeSfHeader(line.replace(/^"|"$/g, ""));
+    const isSectionLine = normalizedLine.startsWith("cuenta:");
+    if (!isSectionLine) {
+      i += 1;
+      continue;
+    }
+
+    const sectionLabel = line.replace(/^"|"$/g, "").replace(/^Cuenta:\s*/i, "").trim();
+    const headerLine = allLines[i + 1];
+    if (!headerLine) break;
+
+    const commaCount = (headerLine.match(/,/g) || []).length;
+    const semicolonCount = (headerLine.match(/;/g) || []).length;
+    const delimiter = semicolonCount > commaCount ? ";" : ",";
+
+    const headerColumns = parse(headerLine, {
+      columns: false,
+      delimiter,
+      trim: true,
+      relax_quotes: true,
+    }) as string[][];
+    const rawHeaders = headerColumns[0] ?? [];
+    if (!rawHeaders.length) {
+      i += 1;
+      continue;
+    }
+
+    const rows: Record<string, string>[] = [];
+    i += 2;
+
+    while (i < allLines.length) {
+      const currentLine = allLines[i] ?? "";
+      const normalizedCurrent = normalizeSfHeader(currentLine.replace(/^"|"$/g, ""));
+      if (normalizedCurrent.startsWith("cuenta:")) break;
+      if (normalizedCurrent.startsWith("total")) {
+        i += 1;
+        break;
+      }
+
+      const parsedRows = parse(currentLine, {
+        columns: false,
+        delimiter,
+        trim: true,
+        relax_quotes: true,
+        skip_empty_lines: true,
+      }) as string[][];
+      const values = parsedRows[0] ?? [];
+      if (!values.length) {
+        i += 1;
+        continue;
+      }
+
+      const row: Record<string, string> = {};
+      for (let idx = 0; idx < rawHeaders.length; idx++) {
+        row[rawHeaders[idx] ?? ""] = values[idx] ?? "";
+      }
+
+      rows.push(row);
+      i += 1;
+    }
+
+    sections.push({ label: sectionLabel, rows });
+  }
+
+  return sections;
+};
+
+const extractTransferReferenceExternalNumber = (value: string): string | null => {
+  const text = String(value ?? "");
+  const match = text.match(/transferencia\s*\[[^:\]]+:\s*(\d+)\s*\]/i);
+  return match?.[1] ? String(match[1]).trim() : null;
+};
 
 const toIdString = (value: any): string | null => {
   if (!value) return null;
@@ -432,113 +532,56 @@ export class MovementService {
   }
 
   // ========== 1) importar archivo y devolver resumen ==========
+  // ========== 1) importar archivo y devolver resumen ==========
   async importSolucionFactible(
     dto: ImportSolucionFactibleDto,
     file: Express.Multer.File
   ) {
     try {
       const accountIdMongo = Validators.convertToUid(dto.accountId);
+      const primaryAccount = await AccountModel.findById(accountIdMongo)
+        .select("_id company name")
+        .lean();
+      if (!primaryAccount) throw CustomError.notFound("Account not found");
+
+      let investmentAccountIdMongo: any = null;
+      if (dto.investmentAccountId) {
+        investmentAccountIdMongo = Validators.convertToUid(dto.investmentAccountId);
+        const investmentAccount = await AccountModel.findById(investmentAccountIdMongo)
+          .select("_id company")
+          .lean();
+        if (!investmentAccount) throw CustomError.notFound("Investment account not found");
+        if (String(investmentAccount.company) !== String(primaryAccount.company)) {
+          throw CustomError.badRequest(
+            "investmentAccountId must belong to the same company as accountId"
+          );
+        }
+      }
 
       const csvContent = file.buffer.toString("utf8");
-
-      // 1) Partir en líneas y limpiar vacías
-      const allLines = csvContent
-        .split(/\r?\n/)
-        .map((l) => l.trimEnd())
-        .filter((l) => l.trim() !== "");
-
-      if (!allLines.length) {
-        throw CustomError.badRequest("El archivo CSV está vacío");
-      }
-
-      // 2) Buscar la fila de encabezados (donde está 'Número,Fecha,Categoría,...')
-      const normalizeLine = (line: string) =>
-        line
-          .replace(/^\uFEFF/, "") // ✅ quita BOM si viene al inicio
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/\p{Diacritic}/gu, "") // quita acentos
-          .trim();
-
-      // ✅ regex tolerante a comillas/espacios y separador coma o ;
-      const headerRegex =
-        /^"?(numero)"?\s*([,;])\s*"?fecha"?\s*\2\s*"?categoria"?\b/;
-
-      const headerIndex = allLines.findIndex((line) => {
-        const norm = normalizeLine(line);
-        return headerRegex.test(norm);
-      });
-
-      if (headerIndex === -1) {
-        // Debug útil: imprime primeras 20 líneas normalizadas
-        const sample = allLines.slice(0, 20).map(normalizeLine);
-        console.log("CSV header scan sample:", sample);
-
+      const sections = parseSolucionFactibleSections(csvContent);
+      if (!sections.length) {
         throw CustomError.badRequest(
-          "No se encontró la cabecera (Numero, Fecha, Categoria) en el CSV"
-        );
-      }
-      // 3) Quedarnos sólo con la parte desde el encabezado hacia abajo
-      const dataLines = allLines.slice(headerIndex);
-
-      // 4) Detectar delimitador (coma o punto y coma)
-      const headerLine = dataLines[0];
-      const commaCount = (headerLine.match(/,/g) || []).length;
-      const semicolonCount = (headerLine.match(/;/g) || []).length;
-
-      const delimiter = semicolonCount > commaCount ? ";" : ",";
-
-      const csvOnlyData = dataLines.join("\n");
-
-      // 5) Parsear con csv-parse usando esa cabecera
-      const rawRecords = parse(csvOnlyData, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-        delimiter,
-      }) as Record<string, string>[];
-
-      if (!rawRecords.length) {
-        throw CustomError.badRequest(
-          "No se encontraron filas de datos en el CSV"
+          "No se encontraron secciones de cuenta en el CSV (formato 'Cuenta: ...')"
         );
       }
 
-      // 6) Normalizar encabezados → a nuestro modelo SolucionFactibleRow
-      const normalizeHeader = (h: string) =>
-        h
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/\p{Diacritic}/gu, "") // quita acentos
-          .trim();
-
-      const records: SolucionFactibleRow[] = rawRecords
-        .map((raw, rawIndex) => {
-          const mapped: Partial<SolucionFactibleRow> = {};
+      const records: SolucionFactibleRow[] = [];
+      for (const section of sections) {
+        for (const raw of section.rows) {
+          const mapped: Partial<SolucionFactibleRow> = { Cuenta: section.label };
 
           for (const [key, value] of Object.entries(raw)) {
-            const nk = normalizeHeader(key);
-
-            if (nk === "numero") {
-              mapped.Numero = String(value ?? "").trim();
-            } else if (nk === "fecha") {
-              mapped.Fecha = String(value ?? "").trim();
-            } else if (nk.startsWith("categoria")) {
-              mapped.Categoria = String(value ?? "").trim();
-            } else if (
-              nk === "nombre" ||
-              nk === "pagado a" ||
-              nk === "pagadoa"
-            ) {
-              // aceptamos tanto 'Nombre' como 'Pagado a'
-              mapped.Nombre = String(value ?? "").trim();
-            } else if (nk === "monto") {
-              mapped.Monto = String(value ?? "").trim();
-            }
+            const nk = normalizeSfHeader(key);
+            const normalizedValue = normalizeSfCell(value);
+            if (nk === "numero") mapped.Numero = normalizedValue;
+            else if (nk === "fecha") mapped.Fecha = normalizedValue;
+            else if (nk.startsWith("categoria")) mapped.Categoria = normalizedValue;
+            else if (nk === "nombre" || nk === "pagado a" || nk === "pagadoa")
+              mapped.Nombre = normalizedValue;
+            else if (nk === "monto") mapped.Monto = normalizedValue;
           }
 
-          // Validación mínima: que tenga Numero, Fecha, Categoria y Monto
-          const csvRowNumber = headerIndex + 2 + rawIndex;
           const hasAnyValue = Boolean(
             mapped.Numero ||
               mapped.Fecha ||
@@ -546,48 +589,20 @@ export class MovementService {
               mapped.Nombre ||
               mapped.Monto
           );
-
-          if (!hasAnyValue) {
-            return null;
+          if (!hasAnyValue) continue;
+          if (!mapped.Numero || !mapped.Fecha || !mapped.Categoria || !mapped.Monto) {
+            continue;
           }
-
-          const numero = String(mapped.Numero ?? "").toLowerCase();
-          const categoria = String(mapped.Categoria ?? "").toLowerCase();
-          const nombre = String(mapped.Nombre ?? "").toLowerCase();
-          const isFooterTotalRow =
-            numero.includes("total") ||
-            categoria.includes("total") ||
-            nombre.includes("total");
-
-          if (isFooterTotalRow && (!mapped.Fecha || !mapped.Categoria)) {
-            return null;
-          }
-
-          if (!mapped.Numero) {
-            throw CustomError.badRequest(
-              `Id externo vacio en fila #${csvRowNumber} (columna Numero)`
-            );
-          }
-          if (!mapped.Fecha || !mapped.Categoria || !mapped.Monto) {
-            throw CustomError.badRequest(
-              `Fila incompleta #${csvRowNumber}: se requiere Numero, Fecha, Categoria y Monto`
-            );
-          }
-
-          return mapped as SolucionFactibleRow;
-        })
-        .filter((r): r is SolucionFactibleRow => r !== null);
-
-      if (!records.length) {
-        throw CustomError.badRequest(
-          "No se encontraron filas válidas (con Número, Fecha, Categoría y Monto) en el CSV"
-        );
+          records.push(mapped as SolucionFactibleRow);
+        }
       }
 
-      // 7) Normalizar filas + parsear fecha + extraer clave + ignorar colegiaturas
+      if (!records.length) {
+        throw CustomError.badRequest("No se encontraron filas de datos validas en el CSV");
+      }
+
       const normalizedRowsWithMeta = records
         .map((row, index) => {
-          // ignorar exactamente "Colegiaturas [60101001]"
           const categoriaTrim = row.Categoria.trim();
           if (categoriaTrim === "Colegiaturas [60101001]") {
             return null;
@@ -600,73 +615,74 @@ export class MovementService {
             );
           }
 
-          const externalConceptKey = getExternalConceptKeyFromCategory(
-            row.Categoria
-          );
-
           const occurredAt = parseDateDDMMYYYY(row.Fecha);
           if (!occurredAt) {
             throw CustomError.badRequest(
-              `Fecha inválida en la fila de datos #${index + 1} ("${
-                row.Fecha
-              }"). Se espera formato dd/MM/yyyy`
+              `Fecha invalida en la fila de datos #${index + 1} ("${row.Fecha}")`
             );
           }
 
-          // limpiar monto (por si viene con comas como separador de miles)
           const amountNumber = Number(
             String(row.Monto).replace(/,/g, "").replace(/\s+/g, "")
           );
           if (Number.isNaN(amountNumber)) {
             throw CustomError.badRequest(
-              `Monto inválido en la fila de datos #${index + 1} ("${
-                row.Monto
-              }")`
+              `Monto invalido en la fila de datos #${index + 1} ("${row.Monto}")`
             );
           }
 
+          const sourceAccountLabel = String(row.Cuenta ?? "").trim();
+          const isInvestmentSection = /inversion/i.test(sourceAccountLabel);
+          const targetAccount =
+            isInvestmentSection && investmentAccountIdMongo
+              ? investmentAccountIdMongo
+              : accountIdMongo;
+
+          const transferRefExternalNumber = extractTransferReferenceExternalNumber(
+            row.Nombre
+          );
+          const isTransferCandidate = Boolean(transferRefExternalNumber);
+          const pairA = externalNumber;
+          const pairB = transferRefExternalNumber ?? externalNumber;
+          const transferPairKey = [pairA, pairB].sort().join("|");
+
           return {
+            account: targetAccount,
+            sourceAccountLabel,
             externalNumber,
             occurredAt,
             externalCategoryRaw: row.Categoria,
-            externalConceptKey,
+            externalConceptKey: getExternalConceptKeyFromCategory(row.Categoria),
             externalName: row.Nombre,
             amount: amountNumber,
+            transferRefExternalNumber,
+            isTransferCandidate,
+            transferPairKey,
             rowNumber: index + 1,
           };
         })
-        .filter((r) => r !== null) as Array<{
-        externalNumber: string;
-        occurredAt: Date;
-        externalCategoryRaw: string;
-        externalConceptKey: string | null;
-        externalName: string;
-        amount: number;
-        rowNumber: number;
-      }>;
+        .filter((r) => r !== null) as Array<any>;
 
       if (!normalizedRowsWithMeta.length) {
         throw CustomError.badRequest(
-          "Todas las filas fueron descartadas (por categoría ignorada o datos inválidos)"
+          "Todas las filas fueron descartadas (por categoria ignorada o datos invalidos)"
         );
       }
 
       const seenExternalNumbers = new Map<string, number>();
       for (const row of normalizedRowsWithMeta) {
-        const firstRow = seenExternalNumbers.get(row.externalNumber);
+        const dedupeKey = `${String(row.account)}:${row.externalNumber}`;
+        const firstRow = seenExternalNumbers.get(dedupeKey);
         if (firstRow !== undefined) {
           throw CustomError.badRequest(
-            `Id externo duplicado "${row.externalNumber}" en filas de datos #${firstRow} y #${row.rowNumber}`
+            `Id externo duplicado "${row.externalNumber}" para la misma cuenta en filas #${firstRow} y #${row.rowNumber}`
           );
         }
-        seenExternalNumbers.set(row.externalNumber, row.rowNumber);
+        seenExternalNumbers.set(dedupeKey, row.rowNumber);
       }
 
-      const normalizedRows = normalizedRowsWithMeta.map(
-        ({ rowNumber, ...row }) => row
-      );
+      const normalizedRows = normalizedRowsWithMeta.map(({ rowNumber, ...row }) => row);
 
-      // 8) Guardar batch en Mongo
       const batch = await MovementImportBatchModel.create({
         account: accountIdMongo,
         source: "SOLUCION_FACTIBLE",
@@ -674,13 +690,12 @@ export class MovementService {
         status: "PENDING",
       });
 
-      // 9) Agrupar por concepto (de lo que sí quedó)
       const conceptosMap = new Map<
         string,
         { externalCategoryRaw: string; count: number }
       >();
 
-      for (const row of normalizedRows) {
+      for (const row of normalizedRows.filter((r: any) => !r.isTransferCandidate)) {
         const key = row.externalConceptKey || "SIN_CLAVE";
         const current = conceptosMap.get(key);
 
@@ -695,9 +710,12 @@ export class MovementService {
       }
 
       const conceptKeys = Array.from(conceptosMap.keys());
+      const accountIdsForRules = Array.from(
+        new Set(normalizedRows.map((r: any) => String(r.account)))
+      ).map((id) => Validators.convertToUid(id));
 
       const existingRules = await ConceptRuleModel.find({
-        account: accountIdMongo,
+        account: { $in: accountIdsForRules },
         externalConceptKey: { $in: conceptKeys },
       })
         .populate({
@@ -716,12 +734,12 @@ export class MovementService {
 
       const rulesByKey = new Map<string, any>();
       for (const rule of existingRules) {
-        rulesByKey.set(rule.externalConceptKey, rule);
+        rulesByKey.set(`${String(rule.account)}::${rule.externalConceptKey}`, rule);
       }
 
       const concepts = conceptKeys.map((key) => {
         const info = conceptosMap.get(key)!;
-        const rule = rulesByKey.get(key) || null;
+        const rule = rulesByKey.get(`${String(accountIdMongo)}::${key}`) || null;
 
         return {
           externalConceptKey: key,
@@ -749,6 +767,10 @@ export class MovementService {
         accountId: dto.accountId,
         source: "SOLUCION_FACTIBLE",
         totalRows: normalizedRows.length,
+        transferCandidatesCount: normalizedRows.filter((r: any) => r.isTransferCandidate).length,
+        detectedSections: Array.from(
+          new Set(normalizedRows.map((r: any) => String(r.sourceAccountLabel || "")))
+        ),
         concepts,
       };
     } catch (error) {
@@ -774,7 +796,8 @@ export class MovementService {
         throw CustomError.badRequest("Batch already processed");
       }
 
-      const accountId = batch.account;
+      const defaultAccountId = batch.account;
+      const transferService = new TransferService();
 
       const mapConceptToSubsub = new Map<string, string>();
       for (const c of dto.concepts) {
@@ -782,56 +805,69 @@ export class MovementService {
       }
 
       const keys = Array.from(mapConceptToSubsub.keys());
+      const rows = batch.rows as any[];
+      const accountIdsFromRows = Array.from(
+        new Set(rows.map((row) => String(row.account || defaultAccountId)))
+      ).map((id) => Validators.convertToUid(id));
+
       const existingRules = await ConceptRuleModel.find({
-        account: accountId,
+        account: { $in: accountIdsFromRows },
         externalConceptKey: { $in: keys },
       });
 
       const rulesByKey = new Map<string, any>();
       for (const rule of existingRules) {
-        rulesByKey.set(rule.externalConceptKey, rule);
+        rulesByKey.set(`${String(rule.account)}::${rule.externalConceptKey}`, rule);
       }
 
       // Crear / actualizar reglas
-      for (const key of keys) {
-        const chosenSubsub = mapConceptToSubsub.get(key)!;
-        const existingRule = rulesByKey.get(key);
+      for (const accountId of accountIdsFromRows) {
+        for (const key of keys) {
+          const chosenSubsub = mapConceptToSubsub.get(key)!;
+          const existingRule = rulesByKey.get(`${String(accountId)}::${key}`);
 
-        if (!existingRule) {
-          await ConceptRuleModel.create({
-            account: accountId,
-            externalConceptKey: key,
-            subsubcategory: chosenSubsub,
-            timesConfirmed: 1,
-            timesCorrected: 0,
-            locked: false,
-            lastUsedAt: new Date(),
-          });
-        } else {
-          if (String(existingRule.subsubcategory) === String(chosenSubsub)) {
-            existingRule.timesConfirmed += 1;
+          if (!existingRule) {
+            await ConceptRuleModel.create({
+              account: accountId,
+              externalConceptKey: key,
+              subsubcategory: chosenSubsub,
+              timesConfirmed: 1,
+              timesCorrected: 0,
+              locked: false,
+              lastUsedAt: new Date(),
+            });
           } else {
-            existingRule.subsubcategory = chosenSubsub;
-            existingRule.timesConfirmed = 1;
-            existingRule.timesCorrected += 1;
+            if (String(existingRule.subsubcategory) === String(chosenSubsub)) {
+              existingRule.timesConfirmed += 1;
+            } else {
+              existingRule.subsubcategory = chosenSubsub;
+              existingRule.timesConfirmed = 1;
+              existingRule.timesCorrected += 1;
+            }
+            existingRule.lastUsedAt = new Date();
+            await existingRule.save();
           }
-          existingRule.lastUsedAt = new Date();
-          await existingRule.save();
         }
       }
       const source = "SOLUCION_FACTIBLE";
-      const rows = batch.rows as any[];
-      const externalNumbers = rows.map((row) => String(row.externalNumber));
+      const externalNumbers = rows.map(
+        (row) => `${String(row.account || defaultAccountId)}::${String(row.externalNumber)}`
+      );
 
       const existingMovements = await MovementModel.find({
-        account: accountId,
         source,
-        externalNumber: { $in: externalNumbers },
+        $expr: {
+          $in: [
+            { $concat: [{ $toString: "$account" }, "::", { $ifNull: ["$externalNumber", ""] }] },
+            externalNumbers,
+          ],
+        },
       }).lean();
 
       const existingByExternalNumber = new Map<string, any>();
       for (const movement of existingMovements) {
-        existingByExternalNumber.set(String(movement.externalNumber), movement);
+        const key = `${String(movement.account)}::${String(movement.externalNumber)}`;
+        existingByExternalNumber.set(key, movement);
       }
 
       const movementsToInsert: any[] = [];
@@ -869,7 +905,7 @@ export class MovementService {
         ).map((t) => new Date(t));
 
         const servoCandidates = await MovementModel.find({
-          account: accountId,
+          account: { $in: accountIdsFromRows },
           source,
           externalConceptKey: { $in: conceptKeysForLookup },
           externalName: { $in: namesForLookup },
@@ -889,10 +925,112 @@ export class MovementService {
         }
       }
 
+      const rowsByExternal = new Map<string, any[]>();
+      for (const row of rows) {
+        const ext = String(row.externalNumber ?? "").trim();
+        if (!ext) continue;
+        const list = rowsByExternal.get(ext) ?? [];
+        list.push(row);
+        rowsByExternal.set(ext, list);
+      }
+
+      const processedTransferPairs = new Set<string>();
+      let transferCreatedCount = 0;
+
       for (const row of rows) {
         const externalNumber = String(row.externalNumber ?? "").trim();
         if (!externalNumber) {
           throw CustomError.badRequest("Id externo vacio en batch de importacion");
+        }
+
+        const accountForRow = Validators.convertToUid(
+          String(row.account || defaultAccountId)
+        );
+        const existingKey = `${String(accountForRow)}::${externalNumber}`;
+        const existing = existingByExternalNumber.get(existingKey);
+
+        if (row.isTransferCandidate && row.transferRefExternalNumber) {
+          const pairKey = String(row.transferPairKey || "");
+          if (pairKey && processedTransferPairs.has(pairKey)) {
+            continue;
+          }
+
+          const counterpartCandidates =
+            rowsByExternal.get(String(row.transferRefExternalNumber)) ?? [];
+          const counterpart = counterpartCandidates.find(
+            (candidate) =>
+              String(candidate.transferRefExternalNumber || "") === externalNumber &&
+              String(candidate.account || "") !== String(accountForRow)
+          );
+
+          if (!counterpart) {
+            reviewItems.push({
+              externalNumber,
+              externalConceptKey: row.externalConceptKey ?? null,
+              externalName: String(row.externalName || ""),
+              occurredAt: toUtcDateOnly(new Date(row.occurredAt)),
+              amount: Number(row.amount ?? 0),
+              reason: "AMBIGUOUS_MATCH",
+              matchedCount: 0,
+            });
+            continue;
+          }
+
+          const counterpartAccount = Validators.convertToUid(
+            String(counterpart.account || defaultAccountId)
+          );
+          const amount = Math.abs(Number(row.amount ?? 0));
+          const rowDate = toUtcDateOnly(new Date(row.occurredAt)).getTime();
+          const counterpartDate = toUtcDateOnly(
+            new Date(counterpart.occurredAt)
+          ).getTime();
+          const sameDate = rowDate === counterpartDate;
+          const oppositeAmounts =
+            Number(row.amount ?? 0) + Number(counterpart.amount ?? 0) === 0;
+
+          if (!sameDate || !oppositeAmounts || amount === 0) {
+            reviewItems.push({
+              externalNumber,
+              externalConceptKey: row.externalConceptKey ?? null,
+              externalName: String(row.externalName || ""),
+              occurredAt: toUtcDateOnly(new Date(row.occurredAt)),
+              amount: Number(row.amount ?? 0),
+              reason: "POSSIBLE_UPDATE",
+              matchedCount: 1,
+              matchedExternalNumber: String(counterpart.externalNumber || ""),
+              matchedAmount: Number(counterpart.amount ?? 0),
+            });
+            continue;
+          }
+
+          const fromAccount =
+            Number(row.amount ?? 0) < 0 ? String(accountForRow) : String(counterpartAccount);
+          const toAccount =
+            Number(row.amount ?? 0) > 0 ? String(accountForRow) : String(counterpartAccount);
+
+          const occurredOn = toUtcDateOnly(new Date(row.occurredAt))
+            .toISOString()
+            .slice(0, 10);
+
+          await transferService.createTransfer({
+            company: undefined,
+            fromAccount,
+            toAccount,
+            amount,
+            currency: "MXN",
+            occurredAt: toUtcDateOnly(new Date(row.occurredAt)),
+            description: "Transferencia interna detectada en importacion SF",
+            comments: `SF ${externalNumber}<->${String(
+              counterpart.externalNumber || ""
+            )}`,
+            transfererId: "IMPORT_SOLUCION_FACTIBLE",
+            idempotencyKey: `SF-${pairKey}-${occurredOn}-${amount.toFixed(2)}`,
+          } as any);
+
+          transferCreatedCount += 1;
+          if (pairKey) processedTransferPairs.add(pairKey);
+          skippedCount += 1;
+          continue;
         }
 
         const subsubcategoryId = mapConceptToSubsub.get(
@@ -906,7 +1044,6 @@ export class MovementService {
         }
 
         const description = `${row.externalCategoryRaw} - ${row.externalName}`;
-        const existing = existingByExternalNumber.get(externalNumber);
 
         if (!existing) {
           if (isServoBatch) {
@@ -958,7 +1095,7 @@ export class MovementService {
           movementsToInsert.push({
             description,
             comments: "",
-            account: accountId,
+            account: accountForRow,
             occurredAt: row.occurredAt,
             recordedAt: new Date(),
             amount: row.amount,
@@ -1044,6 +1181,7 @@ export class MovementService {
         insertedCount: movementsToInsert.length,
         updatedCount: updates.length,
         skippedCount,
+        transferCreatedCount,
         reviewRequiredCount: reviewItems.length,
         reviewItems,
       };
