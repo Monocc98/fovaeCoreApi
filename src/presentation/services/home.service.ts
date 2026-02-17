@@ -291,6 +291,7 @@ export class HomeService {
                       $expr: {
                         $and: [
                           { $eq: ["$account", "$$accountId"] },
+                          { $ne: ["$source", "TRANSFER"] },
 
                           // ✅ si hay FY, filtra por rango; si no hay FY, NO filtra por fecha
                           {
@@ -1282,6 +1283,7 @@ export class HomeService {
                     $and: [
                       { $ne: ["$$fyStart", null] },
                       { $in: ["$account", "$$accountIds"] },
+                      { $ne: ["$source", "TRANSFER"] },
                       { $gte: ["$occurredAt", "$$fyStart"] },
                       { $lt: ["$occurredAt", "$$fyEnd"] },
                     ],
