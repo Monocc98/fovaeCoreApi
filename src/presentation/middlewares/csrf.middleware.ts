@@ -7,9 +7,13 @@ export class CsrfMiddleware {
   static validate(req: Request, res: Response, next: NextFunction) {
     if (!unsafeMethods.has(String(req.method || "").toUpperCase())) return next();
 
-    const isLoginOrRegister =
-      req.path === "/api/auth/login" || req.path === "/api/auth/register";
-    if (isLoginOrRegister) return next();
+    const csrfExcludedPaths = new Set([
+      "/api/auth/login",
+      "/api/auth/register",
+      "/api/auth/renew",
+      "/api/auth/logout",
+    ]);
+    if (csrfExcludedPaths.has(req.path)) return next();
 
     const hasAuthCookie =
       Boolean(req.cookies?.[envs.ACCESS_COOKIE_NAME]) ||
