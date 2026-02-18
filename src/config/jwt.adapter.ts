@@ -1,6 +1,5 @@
 import jwt, { SignOptions } from 'jsonwebtoken'
 import { envs } from './envs';
-import { resolve } from 'path';
 
 const JWT_SEED = envs.JWT_SEED;
 
@@ -8,13 +7,13 @@ export class JwtAdapter {
 
     //DI ?
 
-    static generateToken( payload: any, duration: string = '2h' ) {
+    static generateToken( payload: any, duration: string = '2h' ): Promise<string | null> {
 
-        return new Promise((resolve) => {
+        return new Promise<string | null>((resolve) => {
             jwt.sign(payload, JWT_SEED, { expiresIn: duration } as SignOptions, (err, token) => {
                  if ( err ) return resolve( null );
 
-                 resolve( token );
+                 resolve( token || null );
             });
         });
         

@@ -14,6 +14,7 @@ export class BudgetRoutes {
     const router = Router();
     const budgetService = new BudgetService();
     const controller = new BudgetController( budgetService );
+    router.use(AuthMiddleware.validateJWT);
     
     // Definir las rutas
     router.get('/', controller.getBudgets);
@@ -21,7 +22,6 @@ export class BudgetRoutes {
     router.get('/:idBudget', controller.getBudgetById);
 
 
-    // router.post('/', [ AuthMiddleware.validateJWT ], controller.createMovement);
     router.post('/', controller.createBudget);
     router.put('/:idBudget', controller.updateBudget);
     router.delete('/:idBudget', controller.deleteBudget);

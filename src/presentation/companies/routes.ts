@@ -14,10 +14,11 @@ export class CompanyRoutes {
     const router = Router();
     const companyService = new CompanyService();
     const controller = new CompanyController( companyService );
+    router.use(AuthMiddleware.validateJWT);
     
     // Definir las rutas
     router.get('/', controller.getCompanies);
-    router.post('/', [ AuthMiddleware.validateJWT ], controller.createCompany);
+    router.post('/', controller.createCompany);
 
 
 

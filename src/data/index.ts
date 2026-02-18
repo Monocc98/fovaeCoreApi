@@ -9,3 +9,4 @@ export * from './mongo/models/account-balances.model';
 export * from './mongo/models/category.model';
 export * from './mongo/models/movements.model';
 export * from './mongo/models/transfer.model';
+export * from './mongo/models/auth-session.model';

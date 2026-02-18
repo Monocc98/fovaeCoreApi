@@ -1,6 +1,10 @@
 import express, { Router } from 'express';
 import path from 'path';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import crypto from 'crypto';
+import { envs } from '../config';
+import { CsrfMiddleware } from './middlewares/csrf.middleware';
 
 interface Options {
   port: number;
@@ -29,7 +33,31 @@ export class Server {
   async start() {
     
     //*CORS
-    this.app.use(cors());
+    const allowedOrigins = envs.FRONTEND_ORIGINS
+      .split(',')
+      .map(origin => origin.trim())
+      .filter(Boolean);
+
+    this.app.use(
+      cors({
+        origin: (origin, callback) => {
+          if (!origin) return callback(null, true);
+          if (allowedOrigins.includes(origin)) return callback(null, true);
+          return callback(new Error('CORS origin not allowed'));
+        },
+        credentials: true,
+      })
+    );
+
+    this.app.use((req, res, next) => {
+      const requestId = req.header('x-request-id') || crypto.randomUUID();
+      res.setHeader('x-request-id', requestId);
+
+      if (req.path.startsWith('/api/')) {
+        res.setHeader('Cache-Control', 'no-store');
+      }
+      next();
+    });
 
     // Healthcheck
     this.app.get('/api/health', (_req, res) => res.json({ ok: true }));
@@ -37,6 +65,8 @@ export class Server {
     //* Middlewares
     this.app.use( express.json() ); // raw
     this.app.use( express.urlencoded({ extended: true }) ); // x-www-form-urlencoded
+    this.app.use( cookieParser() );
+    this.app.use( CsrfMiddleware.validate );
 
     //* Public Folder
     this.app.use( express.static( this.publicPath ) );

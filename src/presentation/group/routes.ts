@@ -14,10 +14,11 @@ export class GroupRoutes {
     const router = Router();
     const groupService = new GroupService();
     const controller = new GroupController( groupService );
+    router.use(AuthMiddleware.validateJWT);
     
     // Definir las rutas
     router.get('/', controller.getGroup);
-    router.post('/', [ AuthMiddleware.validateJWT ], controller.createGroup);
+    router.post('/', controller.createGroup);
 
 
 

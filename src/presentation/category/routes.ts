@@ -14,14 +14,15 @@ export class CategoriesRoutes {
     const router = Router();
     const categoryService = new CategoryService();
     const controller = new CategoryController( categoryService );
+    router.use(AuthMiddleware.validateJWT);
     
     // Definir las rutas
     router.get('/', controller.getCategories);
     router.get('/:idCompany', controller.getCategoriesOverview);
 
-    router.post('/', controller.createCategory); //, [ AuthMiddleware.validateJWT ]
-    router.post('/subcategories', controller.createSubcategory); //, [ AuthMiddleware.validateJWT ]
-    router.post('/subsubcategories', controller.createSubsubcategory); //, [ AuthMiddleware.validateJWT ]
+    router.post('/', controller.createCategory);
+    router.post('/subcategories', controller.createSubcategory);
+    router.post('/subsubcategories', controller.createSubsubcategory);
 
     router.put('/:idCategory', controller.updateCategory);
     router.put('/subcategories/:idSubcategory', controller.updateSubcategory);

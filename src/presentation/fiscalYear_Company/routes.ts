@@ -14,14 +14,15 @@ export class FiscalYear_CompanyRoutes {
     const router = Router();
     const service = new FiscalYear_CompanyService();
     const controller = new FiscalYear_CompanyController( service );
+    router.use(AuthMiddleware.validateJWT);
     
     // Definir las rutas
     router.get('/', controller.getFiscalYears_Companies);
-    router.post('/', controller.createFiscalYear_Company); //[ AuthMiddleware.validateJWT ]
+    router.post('/', controller.createFiscalYear_Company);
 
-    router.get('/:idCompany', controller.getFiscalYears_CompaniesByCompanyId); //[ AuthMiddleware.validateJWT ]
+    router.get('/:idCompany', controller.getFiscalYears_CompaniesByCompanyId);
 
-    router.post('/:idFiscalYearCompanie/lockBudget', controller.lockBudget); //[ AuthMiddleware.validateJWT ]
+    router.post('/:idFiscalYearCompanie/lockBudget', controller.lockBudget);
 
 
 

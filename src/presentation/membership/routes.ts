@@ -14,10 +14,11 @@ export class MembershipRoutes {
     const router = Router();
     const membershipService = new MembershipService();
     const controller = new MembershipController( membershipService );
+    router.use(AuthMiddleware.validateJWT);
     
     // Definir las rutas
     router.get('/', controller.getmemberships);
-    router.post('/', controller.createMembership); //[ AuthMiddleware.validateJWT ], 
+    router.post('/', controller.createMembership);
 
 
 

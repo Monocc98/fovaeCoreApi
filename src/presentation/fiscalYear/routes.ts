@@ -14,6 +14,7 @@ export class FiscalYearRoutes {
     const router = Router();
     const fiscalYearService = new FiscalYearService();
     const controller = new FiscalYearController( fiscalYearService );
+    router.use(AuthMiddleware.validateJWT);
     
     // Definir las rutas
     router.get('/', controller.getFiscalYears);
@@ -21,7 +22,6 @@ export class FiscalYearRoutes {
 
     // router.put('/:idFiscalYear', controller.updateFiscalYear);
 
-    // router.post('/', [ AuthMiddleware.validateJWT ], controller.createFiscalYear);
     router.post('/', controller.createFiscalYear);
     router.put('/:idFiscalYear', controller.updateFiscalYear);
     router.delete('/:idFiscalYear', controller.deleteFiscalYear);

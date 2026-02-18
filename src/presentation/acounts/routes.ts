@@ -14,12 +14,12 @@ export class AccountsRoutes {
     const router = Router();
     const accountService = new AccountService();
     const controller = new AccountsController( accountService );
+    router.use(AuthMiddleware.validateJWT);
     
     // Definir las rutas
     router.get('/', controller.getAccounts);
     router.get('/:idCompany', controller.getAccountsByIdCompany);
     
-    //[ AuthMiddleware.validateJWT ]
     router.post('/', controller.createAccount);
     router.put('/:idAccount', controller.updateAccount);
     router.delete('/:idAccount', controller.deleteAccount);

@@ -17,6 +17,7 @@ export class MovementsRoutes {
     const controller = new MovementController( movementService );
 
     const upload = multer({ storage: multer.memoryStorage() });
+    router.use(AuthMiddleware.validateJWT);
     
     // Definir las rutas
     router.get('/', controller.getMovements);
@@ -25,7 +26,6 @@ export class MovementsRoutes {
 
     // router.put('/:idMovement', controller.updateMovement);
 
-    // router.post('/', [ AuthMiddleware.validateJWT ], controller.createMovement);
     router.post('/', controller.createMovement);
     router.put('/:idMovement', controller.updateMovement);
     router.delete('/:idMovement', controller.deleteMovement);
@@ -38,7 +38,6 @@ export class MovementsRoutes {
     // 1) Subir archivo y obtener resumen de conceptos
     router.post(
       '/imports/solucion-factible',
-      // [AuthMiddleware.validateJWT], // si quieres protegerlo
       upload.single('file'),
       controller.uploadSolucionFactible
     );
@@ -46,7 +45,6 @@ export class MovementsRoutes {
     // 2) Confirmar clasificación y crear movimientos
     router.post(
       '/imports/solucion-factible/:batchId/confirm',
-      // [AuthMiddleware.validateJWT],
       controller.confirmSolucionFactible
     );
 
