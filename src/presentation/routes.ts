@@ -12,6 +12,7 @@ import { FiscalYearRoutes } from './fiscalYear/routes';
 import { FiscalYear_CompanyRoutes } from './fiscalYear_Company/routes';
 import { AccountPermissionsRoutes } from './accountPermissions/routes';
 import { TransfersRoutes } from './transfers/routes';
+import { GraphicsRoutes } from './graphics/routes';
 
 
 
@@ -37,6 +38,7 @@ export class AppRoutes {
     router.use('/api/fiscalYearCompany', FiscalYear_CompanyRoutes.routes);
     router.use('/api/accountPermissions', AccountPermissionsRoutes.routes);
     router.use('/api/transfers', TransfersRoutes.routes);
+    router.use('/api/graphics', GraphicsRoutes.routes);
 
     return router;
   }
