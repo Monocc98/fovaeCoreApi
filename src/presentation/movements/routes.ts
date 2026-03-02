@@ -32,6 +32,7 @@ export class MovementsRoutes {
 
     router.get('/importBatches/pending/:idAccount', controller.getPendingImportBatchesByAccount);
     router.get('/importBatches/summary/:idBatch', controller.getImportBatchSummary);
+    router.delete('/importBatches/:idBatch', controller.deleteImportBatch);
 
     // ====== NUEVO: importación desde Solución Factible ======
 

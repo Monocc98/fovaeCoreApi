@@ -531,6 +531,31 @@ export class MovementService {
     }
   }
 
+  async deleteImportBatch(batchId: string) {
+    try {
+      if (!Validators.isMongoID(batchId)) {
+        throw CustomError.badRequest("Invalid batchId");
+      }
+      const batchIdMongo = Validators.convertToUid(batchId);
+
+      const batch = await MovementImportBatchModel.findById(batchIdMongo);
+      if (!batch) throw CustomError.notFound("Batch not found");
+
+      if (batch.status !== "PENDING") {
+        throw CustomError.badRequest("Only pending batches can be deleted");
+      }
+
+      await MovementImportBatchModel.findByIdAndDelete(batchIdMongo);
+
+      return {
+        deletedBatch: batch.toJSON(),
+      };
+    } catch (error) {
+      if (error instanceof CustomError) throw error;
+      throw CustomError.internalServer(`${error}`);
+    }
+  }
+
   // ========== 1) importar archivo y devolver resumen ==========
   // ========== 1) importar archivo y devolver resumen ==========
   async importSolucionFactible(

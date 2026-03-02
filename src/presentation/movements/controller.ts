@@ -97,6 +97,15 @@ export class MovementController {
       .catch((error) => this.handleError(error, res));
   };
 
+  deleteImportBatch = async (req: Request, res: Response) => {
+    const idBatch = req.params.idBatch;
+
+    this.movementService
+      .deleteImportBatch(idBatch)
+      .then((batch) => res.json(batch))
+      .catch((error) => this.handleError(error, res));
+  };
+
   // ====== NUEVO: subir archivo Solución Factible ======
   uploadSolucionFactible = async (req: Request, res: Response) => {
     try {
