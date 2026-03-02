@@ -28,6 +28,38 @@ export class CreateCategoryDto {
     }
 }
 
+export type CategoryReorderLevel = 'category' | 'subcategory' | 'subsubcategory';
+
+export class ReorderCategoriesDto {
+
+    private constructor(
+        public readonly level: CategoryReorderLevel,
+        public readonly parentId: string,
+        public readonly orderedIds: string[],
+    ) {}
+
+    static create( object: { [key: string]: any } ): [string?, ReorderCategoriesDto?] {
+
+        const { level, parentId, orderedIds } = object;
+
+        const validLevels: CategoryReorderLevel[] = ['category', 'subcategory', 'subsubcategory'];
+
+        if ( !level ) return ['Missing level'];
+        if ( !validLevels.includes(level) ) return ['Invalid level'];
+        if ( !parentId ) return ['Missing parentId'];
+        if ( !Validators.isMongoID(parentId) ) return ['Invalid parentId'];
+        if ( !Array.isArray(orderedIds) || orderedIds.length === 0 ) return ['orderedIds must be a non-empty array'];
+
+        const normalizedIds = orderedIds.map((id) => `${ id }`);
+
+        if ( normalizedIds.some((id) => !Validators.isMongoID(id)) ) return ['orderedIds contains an invalid ID'];
+        if ( new Set(normalizedIds).size !== normalizedIds.length ) return ['orderedIds contains duplicate IDs'];
+
+        return [undefined, new ReorderCategoriesDto(level, parentId, normalizedIds)];
+
+    }
+}
+
 export class UpdateCategoryDto {
 
     private constructor(

@@ -24,6 +24,7 @@ export class CategoriesRoutes {
     router.post('/subcategories', controller.createSubcategory);
     router.post('/subsubcategories', controller.createSubsubcategory);
 
+    router.put('/reorder', controller.reorderCategories);
     router.put('/:idCategory', controller.updateCategory);
     router.put('/subcategories/:idSubcategory', controller.updateSubcategory);
     router.put('/subsubcategories/:idSubsubcategory', controller.updateSubsubcategory);

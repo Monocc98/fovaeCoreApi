@@ -1,5 +1,5 @@
 import { Response, Request } from "express";
-import { CreateCategoryDto, CustomError, UpdateCategoryDto } from "../../domain";
+import { CreateCategoryDto, CustomError, ReorderCategoriesDto, UpdateCategoryDto } from "../../domain";
 import { CategoryService } from "../services/category.service";
 import { CreateSubcategoryDto, UpdateSubcategoryDto } from "../../domain/dtos/category/subcategory.dto";
 import { CreateSubsubcategoryDto, UpdateSubsubcategoryDto } from "../../domain/dtos/category/subsubcategory.dto";
@@ -79,6 +79,7 @@ export class CategoryController {
 
         const [ error, updateCategoryDto ] = UpdateCategoryDto.create(req.body);
         const idCategory = req.params.idCategory;
+        if ( error ) return res.status(400).json({ error })
 
         this.categoryService.updateCategory(idCategory, updateCategoryDto!)
             .then ( category => res.json( category ))
@@ -90,6 +91,7 @@ export class CategoryController {
 
         const [ error, updateSubcategoryDto ] = UpdateSubcategoryDto.create(req.body);
         const idSubcategory = req.params.idSubcategory;
+        if ( error ) return res.status(400).json({ error })
 
         this.categoryService.updateSubcategory(idSubcategory, updateSubcategoryDto!)
             .then ( subcategory => res.json( subcategory ))
@@ -101,9 +103,21 @@ export class CategoryController {
 
         const [ error, updateSubsubcategoryDto ] = UpdateSubsubcategoryDto.create(req.body);
         const idSubsubategory = req.params.idSubsubcategory;
+        if ( error ) return res.status(400).json({ error })
 
         this.categoryService.updateSubsubcategory(idSubsubategory, updateSubsubcategoryDto!)
             .then ( subsubategory => res.json( subsubategory ))
+            .catch( error => this.handleError( error, res ) );
+
+    }
+
+    reorderCategories = async(req: Request, res: Response) => {
+
+        const [ error, reorderCategoriesDto ] = ReorderCategoriesDto.create(req.body);
+        if ( error ) return res.status(400).json({ error })
+
+        this.categoryService.reorderCategories(reorderCategoriesDto!)
+            .then( result => res.json( result ) )
             .catch( error => this.handleError( error, res ) );
 
     }
