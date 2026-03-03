@@ -6,6 +6,7 @@ import {
     createRandomToken,
     hashToken,
     parseDurationToMs,
+    revokeSessionBySessionId,
 } from "../auth/auth-session.helper";
 
 
@@ -82,6 +83,7 @@ export class AuthService {
     public async loginUser( loginUserDto: LoginUserDto ) {
         const user = await UserModel.findOne({ email: loginUserDto.email });
         if ( !user ) throw CustomError.unauthorized('Invalid credentials');
+        if ( user.status === 'disabled' ) throw CustomError.forbidden("User is disabled");
 
         const isMatching = bcryptAdapter.compare( loginUserDto.password, user.password );
         if ( !isMatching) throw CustomError.unauthorized('Invalid credentials');
@@ -125,6 +127,10 @@ export class AuthService {
 
         const user = await UserModel.findById(payload.id);
         if (!user) throw CustomError.unauthorized('User not found');
+        if (user.status === 'disabled') {
+            await revokeSessionBySessionId(payload.sid);
+            throw CustomError.forbidden("User is disabled");
+        }
 
         const { password, ...userEntity } = UserEntity.fromObject(user);
         const tokens = await this.issueTokensForUser({ userEntity });

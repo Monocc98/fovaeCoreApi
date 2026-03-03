@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { CookieOptions, Request, Response } from "express";
 import { envs } from "../../config";
+import { AuthSessionModel } from "../../data";
 import { CustomError } from "../../domain";
 
 const allowedSameSite = new Set(["lax", "strict", "none"]);
@@ -98,4 +99,38 @@ export const getRefreshTokenFromRequest = (req: Request): string => {
 
 export const getAccessTokenFromRequest = (req: Request): string => {
   return String(req.cookies?.[envs.ACCESS_COOKIE_NAME] || "").trim();
+};
+
+export const revokeSessionBySessionId = async (sessionId: string) => {
+  if (!sessionId) return 0;
+
+  const now = new Date();
+  const result = await AuthSessionModel.updateOne(
+    { sessionId, revokedAt: null },
+    {
+      $set: {
+        revokedAt: now,
+        lastUsedAt: now,
+      },
+    }
+  );
+
+  return Number(result.modifiedCount || 0);
+};
+
+export const revokeAllUserSessions = async (userId: string) => {
+  if (!userId) return 0;
+
+  const now = new Date();
+  const result = await AuthSessionModel.updateMany(
+    { user: userId, revokedAt: null },
+    {
+      $set: {
+        revokedAt: now,
+        lastUsedAt: now,
+      },
+    }
+  );
+
+  return Number(result.modifiedCount || 0);
 };

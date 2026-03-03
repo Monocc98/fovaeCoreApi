@@ -52,6 +52,17 @@ export class AuthMiddleware {
                 });
             }
 
+            if ( user.status === 'disabled' ) {
+                return res.status(401).json({
+                    error: {
+                        status: 401,
+                        code: "AUTH_401",
+                        message: "User is disabled",
+                        requestId,
+                    },
+                });
+            }
+
             (req as any).user = {
                 id: user.id,
                 name: user.name,
