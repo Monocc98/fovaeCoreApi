@@ -130,6 +130,117 @@ export class AdminUsersService {
         };
     }
 
+    private async syncUserPermissions(
+        user: any,
+        updateAdminUserPermissionsDto: UpdateAdminUserPermissionsDto,
+        session?: mongoose.ClientSession,
+    ) {
+        user.role = "STANDARD";
+        await user.save(session ? { session } : undefined);
+
+        const membershipsQuery = MembershipModel.find({ user: user._id });
+        const existingMemberships = session
+            ? await membershipsQuery.session(session)
+            : await membershipsQuery;
+        const membershipByCompany = new Map<string, any>();
+
+        for (const membership of existingMemberships) {
+            membershipByCompany.set(String(membership.company), membership);
+        }
+
+        const touchedCompanyIds = new Set<string>();
+
+        for (const companyPermission of updateAdminUserPermissionsDto.companyPermissions) {
+            const companyIdMongo = Validators.convertToUid(companyPermission.companyId);
+            const companyQuery = CompanyModel.findById(companyIdMongo);
+            const company = session ? await companyQuery.session(session) : await companyQuery;
+            if (!company) throw CustomError.badRequest(`Company not found: ${ companyPermission.companyId }`);
+
+            let membership = membershipByCompany.get(companyPermission.companyId);
+            if (!membership) {
+                membership = new MembershipModel({
+                    user: user._id,
+                    company: companyIdMongo,
+                    role: companyPermission.baseRole,
+                    status: companyPermission.status,
+                });
+            } else {
+                membership.role = companyPermission.baseRole;
+                membership.status = companyPermission.status;
+            }
+
+            await membership.save(session ? { session } : undefined);
+            membershipByCompany.set(companyPermission.companyId, membership);
+            touchedCompanyIds.add(companyPermission.companyId);
+
+            const companyAccountsQuery = AccountModel.find({ company: companyIdMongo }).lean();
+            const companyAccounts = session
+                ? await companyAccountsQuery.session(session)
+                : await companyAccountsQuery;
+            const validAccountIds = new Set(companyAccounts.map((account: any) => String(account._id)));
+
+            for (const accountPermission of companyPermission.accounts) {
+                if (!validAccountIds.has(accountPermission.accountId)) {
+                    throw CustomError.badRequest(`Account ${ accountPermission.accountId } does not belong to company ${ companyPermission.companyId }`);
+                }
+            }
+
+            const overridesQuery = AccountPermissionsModel.find({
+                membership: membership._id,
+            });
+            const existingOverrides = session
+                ? await overridesQuery.session(session)
+                : await overridesQuery;
+            const overrideByAccount = new Map<string, any>();
+
+            for (const override of existingOverrides) {
+                overrideByAccount.set(String(override.account), override);
+            }
+
+            const touchedAccountIds = new Set<string>();
+
+            for (const accountPermission of companyPermission.accounts) {
+                let override = overrideByAccount.get(accountPermission.accountId);
+
+                if (!override) {
+                    override = new AccountPermissionsModel({
+                        membership: membership._id,
+                        account: Validators.convertToUid(accountPermission.accountId),
+                    });
+                }
+
+                override.canView = accountPermission.canView;
+                override.canEdit = accountPermission.canEdit;
+                await override.save(session ? { session } : undefined);
+                touchedAccountIds.add(accountPermission.accountId);
+            }
+
+            const overridesToDelete = existingOverrides
+                .filter((override: any) => !touchedAccountIds.has(String(override.account)))
+                .map((override: any) => override._id);
+
+            if (overridesToDelete.length > 0) {
+                const deleteQuery = AccountPermissionsModel.deleteMany({
+                    _id: { $in: overridesToDelete },
+                });
+
+                if (session) {
+                    await deleteQuery.session(session);
+                } else {
+                    await deleteQuery;
+                }
+            }
+        }
+
+        for (const membership of existingMemberships) {
+            const companyId = String(membership.company);
+            if (touchedCompanyIds.has(companyId)) continue;
+
+            membership.status = "disabled";
+            await membership.save(session ? { session } : undefined);
+        }
+    }
+
     async listUsers(listAdminUsersDto: ListAdminUsersDto) {
         try {
             const query: Record<string, any> = {
@@ -284,103 +395,20 @@ export class AdminUsersService {
         const session = await mongoose.startSession();
 
         try {
-            await session.withTransaction(async () => {
-                user.role = "STANDARD";
-                await user.save({ session });
-
-                const existingMemberships = await MembershipModel.find({ user: user._id }).session(session);
-                const membershipByCompany = new Map<string, any>();
-
-                for (const membership of existingMemberships) {
-                    membershipByCompany.set(String(membership.company), membership);
+            try {
+                await session.withTransaction(async () => {
+                    await this.syncUserPermissions(user, updateAdminUserPermissionsDto, session);
+                });
+            } catch (error) {
+                if (!this.isTransactionNotSupportedError(error)) {
+                    throw error;
                 }
 
-                const touchedCompanyIds = new Set<string>();
-
-                for (const companyPermission of updateAdminUserPermissionsDto.companyPermissions) {
-                    const companyIdMongo = Validators.convertToUid(companyPermission.companyId);
-                    const company = await CompanyModel.findById(companyIdMongo).session(session);
-                    if (!company) throw CustomError.badRequest(`Company not found: ${ companyPermission.companyId }`);
-
-                    let membership = membershipByCompany.get(companyPermission.companyId);
-                    if (!membership) {
-                        membership = new MembershipModel({
-                            user: user._id,
-                            company: companyIdMongo,
-                            role: companyPermission.baseRole,
-                            status: companyPermission.status,
-                        });
-                    } else {
-                        membership.role = companyPermission.baseRole;
-                        membership.status = companyPermission.status;
-                    }
-
-                    await membership.save({ session });
-                    membershipByCompany.set(companyPermission.companyId, membership);
-                    touchedCompanyIds.add(companyPermission.companyId);
-
-                    const companyAccounts = await AccountModel.find({ company: companyIdMongo }).session(session).lean();
-                    const validAccountIds = new Set(companyAccounts.map((account: any) => String(account._id)));
-
-                    for (const accountPermission of companyPermission.accounts) {
-                        if (!validAccountIds.has(accountPermission.accountId)) {
-                            throw CustomError.badRequest(`Account ${ accountPermission.accountId } does not belong to company ${ companyPermission.companyId }`);
-                        }
-                    }
-
-                    const existingOverrides = await AccountPermissionsModel.find({
-                        membership: membership._id,
-                    }).session(session);
-                    const overrideByAccount = new Map<string, any>();
-
-                    for (const override of existingOverrides) {
-                        overrideByAccount.set(String(override.account), override);
-                    }
-
-                    const touchedAccountIds = new Set<string>();
-
-                    for (const accountPermission of companyPermission.accounts) {
-                        let override = overrideByAccount.get(accountPermission.accountId);
-
-                        if (!override) {
-                            override = new AccountPermissionsModel({
-                                membership: membership._id,
-                                account: Validators.convertToUid(accountPermission.accountId),
-                            });
-                        }
-
-                        override.canView = accountPermission.canView;
-                        override.canEdit = accountPermission.canEdit;
-                        await override.save({ session });
-                        touchedAccountIds.add(accountPermission.accountId);
-                    }
-
-                    const overridesToDelete = existingOverrides
-                        .filter((override: any) => !touchedAccountIds.has(String(override.account)))
-                        .map((override: any) => override._id);
-
-                    if (overridesToDelete.length > 0) {
-                        await AccountPermissionsModel.deleteMany({
-                            _id: { $in: overridesToDelete },
-                        }).session(session);
-                    }
-                }
-
-                for (const membership of existingMemberships) {
-                    const companyId = String(membership.company);
-                    if (touchedCompanyIds.has(companyId)) continue;
-
-                    membership.status = "disabled";
-                    await membership.save({ session });
-                }
-            });
+                await this.syncUserPermissions(user, updateAdminUserPermissionsDto);
+            }
 
             return await this.buildUserPermissionsView(user);
         } catch (error) {
-            if (this.isTransactionNotSupportedError(error)) {
-                throw CustomError.internalServer("MongoDB transactions are required for this operation");
-            }
-
             if (error instanceof CustomError) throw error;
             throw CustomError.internalServer(`${ error }`);
         } finally {
