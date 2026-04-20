@@ -65,6 +65,14 @@ export class CategoryController {
         
     }
 
+    getCategoryBucketOptions = async(_req: Request, res: Response) => {
+
+        this.categoryService.getCategoryBucketOptions()
+            .then( options => res.json( options ))
+            .catch( error => this.handleError( error, res ) );
+
+    }
+
     getCategoriesOverview = async(req: Request, res: Response) => {
 
         const idCompany = req.params.idCompany;

@@ -3,7 +3,15 @@ import { Validators } from "../../config";
 import { CategoryModel, CompanyModel } from "../../data";
 import { SubcategoryModel } from "../../data/mongo/models/subcategory.model";
 import { SubsubcategoryModel } from "../../data/mongo/models/subsubcategory.model";
-import { CreateCategoryDto, CustomError, ReorderCategoriesDto, UpdateCategoryDto } from "../../domain";
+import {
+    CATEGORY_BUCKETS,
+    CATEGORY_TYPES,
+    CreateCategoryDto,
+    CustomError,
+    EXPENSE_CATEGORY_BUCKETS,
+    ReorderCategoriesDto,
+    UpdateCategoryDto,
+} from "../../domain";
 import { CreateSubcategoryDto, UpdateSubcategoryDto } from "../../domain/dtos/category/subcategory.dto";
 import { CreateSubsubcategoryDto, UpdateSubsubcategoryDto } from "../../domain/dtos/category/subsubcategory.dto";
 
@@ -237,6 +245,24 @@ export class CategoryService {
 
     }
 
+    async getCategoryBucketOptions() {
+        return {
+            categoryTypes: [...CATEGORY_TYPES],
+            categoryBuckets: {
+                INCOME: ['INCOME'],
+                EXPENSE: [...EXPENSE_CATEGORY_BUCKETS],
+            },
+            bucketOptions: [
+                { value: 'INCOME', label: 'Income', categoryType: 'INCOME' },
+                { value: 'FIXED_EXPENSE', label: 'Fixed Expense', categoryType: 'EXPENSE' },
+                { value: 'VARIABLE_EXPENSE', label: 'Variable Expense', categoryType: 'EXPENSE' },
+                { value: 'FAMILY', label: 'Family', categoryType: 'EXPENSE' },
+            ],
+            deprecatedBuckets: ['OTHER'],
+            allowedBuckets: [...CATEGORY_BUCKETS],
+        };
+    }
+
     async getCategoriesOverview(companyId: string) {
         try {
       if (!Validators.isMongoID(companyId)) {
@@ -287,7 +313,7 @@ export class CategoryService {
                 },
               },
 
-              { $project: { _id: 1, name: 1, company: 1, scope: 1, type: 1, subcategories: 1, sortIndex: 1 } },
+              { $project: { _id: 1, name: 1, company: 1, scope: 1, type: 1, bucket: 1, subcategories: 1, sortIndex: 1 } },
             ],
             as: "categories",
           },

@@ -1,5 +1,41 @@
 import { Validators } from "../../../config";
 
+export const CATEGORY_SCOPES = ['COMPANY', 'ACCOUNT'] as const;
+export const CATEGORY_TYPES = ['INCOME', 'EXPENSE'] as const;
+export const CATEGORY_BUCKETS = ['INCOME', 'FIXED_EXPENSE', 'VARIABLE_EXPENSE', 'FAMILY'] as const;
+export const EXPENSE_CATEGORY_BUCKETS = ['FIXED_EXPENSE', 'VARIABLE_EXPENSE', 'FAMILY'] as const;
+
+const normalizeString = (value: unknown) => String(value ?? '').trim().toUpperCase();
+
+const validateCategoryTypeAndBucket = (type: unknown, bucket: unknown): [string?, string?, string?] => {
+    const normalizedType = normalizeString(type);
+    const normalizedBucket = normalizeString(bucket);
+
+    if ( !CATEGORY_TYPES.includes(normalizedType as typeof CATEGORY_TYPES[number]) ) {
+        return ['Invalid type'];
+    }
+
+    if ( !normalizedBucket ) {
+        return ['Missing bucket'];
+    }
+
+    if ( !CATEGORY_BUCKETS.includes(normalizedBucket as typeof CATEGORY_BUCKETS[number]) ) {
+        return ['Invalid bucket'];
+    }
+
+    if ( normalizedType === 'INCOME' && normalizedBucket !== 'INCOME' ) {
+        return ['Income categories must use bucket INCOME'];
+    }
+
+    if (
+        normalizedType === 'EXPENSE' &&
+        !EXPENSE_CATEGORY_BUCKETS.includes(normalizedBucket as typeof EXPENSE_CATEGORY_BUCKETS[number])
+    ) {
+        return ['Expense categories must use FIXED_EXPENSE, VARIABLE_EXPENSE or FAMILY'];
+    }
+
+    return [undefined, normalizedType, normalizedBucket];
+};
 
 export class CreateCategoryDto {
 
@@ -9,21 +45,28 @@ export class CreateCategoryDto {
         public readonly scope : string,
         public readonly account : string,
         public readonly type : string,
+        public readonly bucket : string,
     ) {}
 
     static create( object: { [key: string]: any } ): [string?, CreateCategoryDto?] {
 
-        const { name, company, scope, account, type } = object;
+        const { name, company, scope, account, type, bucket } = object;
+        const normalizedScope = normalizeString(scope);
         
         if ( !name ) return ['Missing name'];
         if ( !company ) return ['Missing company'];
-        if ( !scope ) return ['Missing scope'];
-        if ( scope === 'ACCOUNT' && !account ) return ['Missing account'];
+        if ( !normalizedScope ) return ['Missing scope'];
+        if ( !CATEGORY_SCOPES.includes(normalizedScope as typeof CATEGORY_SCOPES[number]) ) return ['Invalid scope'];
+        if ( normalizedScope === 'ACCOUNT' && !account ) return ['Missing account'];
         if ( !type ) return ['Missing type'];
+
+        const [ bucketError, normalizedType, normalizedBucket ] = validateCategoryTypeAndBucket(type, bucket);
+        if ( bucketError ) return [bucketError];
+
         if ( !Validators.isMongoID(company) ) return ['Invalid company ID'];
-        if (  scope === 'ACCOUNT' && !Validators.isMongoID(account) ) return ['Invalid account ID'];
+        if ( normalizedScope === 'ACCOUNT' && !Validators.isMongoID(account) ) return ['Invalid account ID'];
         
-        return [undefined,  new CreateCategoryDto( name, company, scope, account, type )]
+        return [undefined,  new CreateCategoryDto( name, company, normalizedScope, account, normalizedType!, normalizedBucket! )]
 
     }
 }
@@ -65,16 +108,20 @@ export class UpdateCategoryDto {
     private constructor(
         public readonly name : string,
         public readonly type : string,
+        public readonly bucket : string,
     ) {}
 
     static create( object: { [key: string]: any } ): [string?, UpdateCategoryDto?] {
 
-        const { name, type } = object;
+        const { name, type, bucket } = object;
         
         if ( !name ) return ['Missing name'];
         if ( !type ) return ['Missing type'];
+
+        const [ bucketError, normalizedType, normalizedBucket ] = validateCategoryTypeAndBucket(type, bucket);
+        if ( bucketError ) return [bucketError];
         
-        return [undefined,  new UpdateCategoryDto( name, type )]
+        return [undefined,  new UpdateCategoryDto( name, normalizedType!, normalizedBucket! )]
 
     }
 }

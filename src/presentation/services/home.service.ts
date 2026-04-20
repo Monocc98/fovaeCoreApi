@@ -1327,7 +1327,27 @@ export class HomeService {
               // normaliza bucket en mayúsculas por si acaso
               {
                 $addFields: {
-                  bucket: { $toUpper: { $ifNull: ["$cat.bucket", "UNMAPPED"] } },
+                  bucket: {
+                    $let: {
+                      vars: {
+                        normalizedBucket: {
+                          $toUpper: { $ifNull: ["$cat.bucket", "UNMAPPED"] },
+                        },
+                      },
+                      in: {
+                        $cond: [
+                          {
+                            $in: [
+                              "$$normalizedBucket",
+                              ["INCOME", "FIXED_EXPENSE", "VARIABLE_EXPENSE", "FAMILY"],
+                            ],
+                          },
+                          "$$normalizedBucket",
+                          "UNMAPPED",
+                        ],
+                      },
+                    },
+                  },
                 },
               },
 
@@ -1352,7 +1372,8 @@ export class HomeService {
         { $unwind: { path: "$movesFY", preserveNullAndEmptyArrays: true } },
         {
           $addFields: {
-            moveBucket: { $ifNull: ["$movesFY.bucket", "UNMAPPED"] },
+            hasRealMove: { $ne: ["$movesFY", null] },
+            moveBucket: "$movesFY.bucket",
             moveAmount: { $ifNull: ["$movesFY.amount", 0] },
           },
         },
@@ -1389,7 +1410,7 @@ export class HomeService {
                     $cond: [
                       { $lt: ["$moveAmount", 0] },
                       { $abs: "$moveAmount" },
-                      "$moveAmount",
+                      0,
                     ],
                   },
                   0,
@@ -1405,7 +1426,7 @@ export class HomeService {
                     $cond: [
                       { $lt: ["$moveAmount", 0] },
                       { $abs: "$moveAmount" },
-                      "$moveAmount",
+                      0,
                     ],
                   },
                   0,
@@ -1421,7 +1442,7 @@ export class HomeService {
                     $cond: [
                       { $lt: ["$moveAmount", 0] },
                       { $abs: "$moveAmount" },
-                      "$moveAmount",
+                      0,
                     ],
                   },
                   0,
@@ -1430,7 +1451,18 @@ export class HomeService {
             },
 
             unmappedCount: {
-              $sum: { $cond: [{ $eq: ["$moveBucket", "UNMAPPED"] }, 1, 0] },
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      "$hasRealMove",
+                      { $eq: ["$moveBucket", "UNMAPPED"] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
             },
           },
         },

@@ -18,6 +18,7 @@ export class CategoriesRoutes {
     
     // Definir las rutas
     router.get('/', controller.getCategories);
+    router.get('/buckets/options', controller.getCategoryBucketOptions);
     router.get('/:idCompany', controller.getCategoriesOverview);
 
     router.post('/', controller.createCategory);

@@ -29,7 +29,7 @@ const categorySchema = new mongoose.Schema({
   },
   bucket: {
     type: String,
-    enum: ['INCOME', "FIXED_EXPENSE", "VARIABLE_EXPENSE", "FAMILY", "OTHER"],
+    enum: ['INCOME', "FIXED_EXPENSE", "VARIABLE_EXPENSE", "FAMILY"],
   },
 
 });
