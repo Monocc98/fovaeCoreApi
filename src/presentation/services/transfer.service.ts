@@ -11,20 +11,33 @@ import { CreateTransferDto, CustomError } from "../../domain";
 export class TransferService {
   constructor() {}
 
+  private mapAccountRef(account: any) {
+    if (!account) return { id: "", name: "" };
+
+    if (typeof account === "object") {
+      const id = account.id ?? account._id?.toString?.() ?? account._id ?? "";
+      return {
+        id: String(id),
+        name: String(account.name ?? ""),
+      };
+    }
+
+    return {
+      id: String(account),
+      name: "",
+    };
+  }
+
   private mapTransferView(transfer: any) {
-    const fromAccountName =
-      typeof transfer?.fromAccount === "object" && transfer?.fromAccount
-        ? String((transfer.fromAccount as any).name ?? "")
-        : "";
-    const toAccountName =
-      typeof transfer?.toAccount === "object" && transfer?.toAccount
-        ? String((transfer.toAccount as any).name ?? "")
-        : "";
+    const fromAccount = this.mapAccountRef(transfer?.fromAccount);
+    const toAccount = this.mapAccountRef(transfer?.toAccount);
 
     return {
       ...transfer,
-      fromAccountName,
-      toAccountName,
+      fromAccountId: fromAccount.id,
+      fromAccountName: fromAccount.name,
+      toAccountId: toAccount.id,
+      toAccountName: toAccount.name,
     };
   }
 
@@ -261,7 +274,8 @@ export class TransferService {
       const companyId = Validators.convertToUid(idCompany);
       const transfers: any[] = await TransferModel.find({ company: companyId })
         .sort({ occurredAt: -1, recordedAt: -1 })
-        .populate("fromAccount toAccount")
+        .populate("fromAccount", "name")
+        .populate("toAccount", "name")
         .lean();
 
       return { transfers: transfers.map((transfer) => this.mapTransferView(transfer)) };

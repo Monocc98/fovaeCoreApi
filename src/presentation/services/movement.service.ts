@@ -24,6 +24,8 @@ import * as XLSX from "xlsx";
 import type { Express } from "express";
 import { ImportSolucionFactibleDto } from "../../domain/dtos/movement/ImportSolucionFactible.dto";
 import { TransferService } from "./transfer.service";
+import mongoose from "mongoose";
+import { TransferModel } from "../../data/mongo/models/transfer.model";
 
 interface SolucionFactibleRow {
   Cuenta: string;
@@ -47,6 +49,14 @@ const normalizeSfHeader = (value: string) =>
     .trim();
 
 const normalizeSfCell = (value: unknown) => String(value ?? "").trim();
+
+const normalizeSfAccountLabel = (value: unknown) =>
+  String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
 const parseSolucionFactibleSections = (csvContent: string): SolucionFactibleSection[] => {
   const allLines = csvContent
@@ -203,6 +213,14 @@ export class MovementService {
   // DI
   constructor() {}
 
+  private isTransactionNotSupportedError(error: unknown): boolean {
+    const message = String(error).toLowerCase();
+    return (
+      message.includes("transaction numbers are only allowed on a replica set member or mongos") ||
+      message.includes("transactions are not supported")
+    );
+  }
+
   async createMovement(createMovementDto: CreateMovementDto) {
     try {
       const movement = new MovementModel({
@@ -253,12 +271,52 @@ export class MovementService {
       const prevMovement = await MovementModel.findById(movementIdMongo);
       if (!prevMovement) throw CustomError.notFound("Movement not found");
 
+      if (prevMovement.transfer) {
+        const transferId = prevMovement.transfer;
+        const deleteTransferMovements = async (session?: mongoose.ClientSession) => {
+          const deletedMovements = await MovementModel.deleteMany({
+            transfer: transferId,
+          }).session(session ?? null);
+
+          const deletedTransfer = await TransferModel.findByIdAndDelete(
+            transferId,
+            session ? { session } : undefined
+          );
+
+          return {
+            deletedMovement: prevMovement,
+            deletedMovementsCount: deletedMovements.deletedCount ?? 0,
+            deletedTransfer,
+          };
+        };
+
+        const session = await mongoose.startSession();
+        try {
+          let result: any;
+
+          await session.withTransaction(async () => {
+            result = await deleteTransferMovements(session);
+          });
+
+          return result;
+        } catch (error) {
+          if (this.isTransactionNotSupportedError(error)) {
+            return await deleteTransferMovements();
+          }
+
+          throw error;
+        } finally {
+          await session.endSession();
+        }
+      }
+
       const deletedMovement = await MovementModel.findByIdAndDelete(
         movementIdMongo
       );
 
       return { deletedMovement };
     } catch (error) {
+      if (error instanceof CustomError) throw error;
       throw CustomError.internalServer(`${error}`);
     }
   }
@@ -583,6 +641,40 @@ export class MovementService {
         }
       }
 
+      const accountMappingsByLabel = new Map<string, any>();
+      if (dto.accountMappings && Object.keys(dto.accountMappings).length > 0) {
+        const mappedAccountIds = Array.from(
+          new Set(Object.values(dto.accountMappings).map((id) => String(id)))
+        ).map((id) => Validators.convertToUid(id));
+
+        const mappedAccounts = await AccountModel.find({
+          _id: { $in: mappedAccountIds },
+        })
+          .select("_id company name")
+          .lean();
+
+        const mappedAccountsById = new Map(
+          mappedAccounts.map((account: any) => [String(account._id), account])
+        );
+
+        for (const mappedAccountId of mappedAccountIds) {
+          const mappedAccount = mappedAccountsById.get(String(mappedAccountId));
+          if (!mappedAccount) throw CustomError.notFound("Mapped account not found");
+          if (String(mappedAccount.company) !== String(primaryAccount.company)) {
+            throw CustomError.badRequest(
+              "accountMappings accounts must belong to the same company as accountId"
+            );
+          }
+        }
+
+        for (const [label, mappedAccountId] of Object.entries(dto.accountMappings)) {
+          accountMappingsByLabel.set(
+            normalizeSfAccountLabel(label),
+            Validators.convertToUid(String(mappedAccountId))
+          );
+        }
+      }
+
       const csvContent = file.buffer.toString("utf8");
       const sections = parseSolucionFactibleSections(csvContent);
       if (!sections.length) {
@@ -659,9 +751,10 @@ export class MovementService {
           const sourceAccountLabel = String(row.Cuenta ?? "").trim();
           const isInvestmentSection = /inversion/i.test(sourceAccountLabel);
           const targetAccount =
-            isInvestmentSection && investmentAccountIdMongo
+            accountMappingsByLabel.get(normalizeSfAccountLabel(sourceAccountLabel)) ??
+            (isInvestmentSection && investmentAccountIdMongo
               ? investmentAccountIdMongo
-              : accountIdMongo;
+              : accountIdMongo);
 
           const transferRefExternalNumber = extractTransferReferenceExternalNumber(
             row.Nombre
@@ -796,6 +889,17 @@ export class MovementService {
         detectedSections: Array.from(
           new Set(normalizedRows.map((r: any) => String(r.sourceAccountLabel || "")))
         ),
+        resolvedSectionAccounts: Array.from(
+          new Map(
+            normalizedRows.map((r: any) => [
+              String(r.sourceAccountLabel || ""),
+              String(r.account || ""),
+            ])
+          ).entries()
+        ).map(([sourceAccountLabel, accountId]) => ({
+          sourceAccountLabel,
+          accountId,
+        })),
         concepts,
       };
     } catch (error) {
