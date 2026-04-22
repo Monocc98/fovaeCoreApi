@@ -16,6 +16,7 @@ export class HomeRoutes {
     router.get('/', [ AuthMiddleware.validateJWT ], controller.getHomeOverview);
     router.get('/budget-vs-actual', [ AuthMiddleware.validateJWT ], controller.getCompanyBudgetVsActual);
     router.get('/buckets-summary', [ AuthMiddleware.validateJWT ], controller.getHomeBucketsSummary);
+    router.get('/unmapped-bucket-movements', [ AuthMiddleware.validateJWT ], controller.getUnmappedBucketMovements);
     // router.post('/', [ AuthMiddleware.validateJWT ], controller.createGroup);
 
 

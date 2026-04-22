@@ -61,4 +61,17 @@ export class HomeController {
         
     }
 
+    getUnmappedBucketMovements = async(req: Request, res: Response) => {
+
+        const user = (req as any).user;
+        if (!user?.id) {
+            return res.status(401).json({ error: 'User not authenticated' });
+        }
+
+        await this.homeService.getUnmappedBucketMovements(user.id)
+            .then ( overview => res.json( overview ))
+            .catch( error => this.handleError( error, res ) );
+        
+    }
+
 }

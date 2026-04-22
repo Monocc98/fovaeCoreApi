@@ -13,6 +13,7 @@ const subsubcategorySchema = new mongoose.Schema({
   parent: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Subcategory',
+    required: true,
   },
   account: {
     type: mongoose.Schema.Types.ObjectId,

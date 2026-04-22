@@ -1548,25 +1548,71 @@ export class HomeService {
               // normaliza bucket en mayúsculas por si acaso
               {
                 $addFields: {
+                  normalizedBucket: {
+                    $toUpper: { $ifNull: ["$cat.bucket", ""] },
+                  },
+                },
+              },
+              {
+                $addFields: {
                   bucket: {
-                    $let: {
-                      vars: {
-                        normalizedBucket: {
-                          $toUpper: { $ifNull: ["$cat.bucket", "UNMAPPED"] },
-                        },
-                      },
-                      in: {
-                        $cond: [
-                          {
-                            $in: [
-                              "$$normalizedBucket",
-                              ["INCOME", "FIXED_EXPENSE", "VARIABLE_EXPENSE", "FAMILY"],
-                            ],
-                          },
-                          "$$normalizedBucket",
-                          "UNMAPPED",
+                    $cond: [
+                      {
+                        $in: [
+                          "$normalizedBucket",
+                          ["INCOME", "FIXED_EXPENSE", "VARIABLE_EXPENSE", "FAMILY"],
                         ],
                       },
+                      "$normalizedBucket",
+                      "UNMAPPED",
+                    ],
+                  },
+                  unmappedReason: {
+                    $switch: {
+                      branches: [
+                        {
+                          case: { $eq: [{ $ifNull: ["$subsubcategory", null] }, null] },
+                          then: "MISSING_MOVEMENT_SUBSUBCATEGORY",
+                        },
+                        {
+                          case: { $eq: [{ $ifNull: ["$subsub._id", null] }, null] },
+                          then: "SUBSUBCATEGORY_NOT_FOUND",
+                        },
+                        {
+                          case: { $eq: [{ $ifNull: ["$subsub.parent", null] }, null] },
+                          then: "SUBSUBCATEGORY_WITHOUT_PARENT",
+                        },
+                        {
+                          case: { $eq: [{ $ifNull: ["$subcat._id", null] }, null] },
+                          then: "SUBCATEGORY_NOT_FOUND",
+                        },
+                        {
+                          case: { $eq: [{ $ifNull: ["$subcat.parent", null] }, null] },
+                          then: "SUBCATEGORY_WITHOUT_PARENT",
+                        },
+                        {
+                          case: { $eq: [{ $ifNull: ["$cat._id", null] }, null] },
+                          then: "CATEGORY_NOT_FOUND",
+                        },
+                        {
+                          case: { $eq: ["$normalizedBucket", ""] },
+                          then: "CATEGORY_WITHOUT_BUCKET",
+                        },
+                        {
+                          case: {
+                            $not: [
+                              {
+                                $in: [
+                                  "$normalizedBucket",
+                                  ["INCOME", "FIXED_EXPENSE", "VARIABLE_EXPENSE", "FAMILY"],
+                                ],
+                              },
+                            ],
+                          },
+                          then: "INVALID_CATEGORY_BUCKET",
+                        },
+                      ],
+                      default: null,
                     },
                   },
                 },
@@ -1575,8 +1621,19 @@ export class HomeService {
               {
                 $project: {
                   _id: 1,
+                  description: 1,
+                  occurredAt: 1,
                   amount: 1,
+                  source: 1,
+                  subsubcategory: 1,
+                  subsubName: "$subsub.name",
+                  subcategoryId: "$subcat._id",
+                  subcategoryName: "$subcat.name",
+                  categoryId: "$cat._id",
+                  categoryName: "$cat.name",
+                  categoryBucket: "$cat.bucket",
                   bucket: 1,
+                  unmappedReason: 1,
                 },
               },
             ],
@@ -1685,11 +1742,46 @@ export class HomeService {
                 ],
               },
             },
+            unmappedMovementsRaw: {
+              $push: {
+                $cond: [
+                  {
+                    $and: [
+                      "$hasRealMove",
+                      { $eq: ["$moveBucket", "UNMAPPED"] },
+                    ],
+                  },
+                  {
+                    _id: "$movesFY._id",
+                    description: "$movesFY.description",
+                    occurredAt: "$movesFY.occurredAt",
+                    amount: "$movesFY.amount",
+                    source: "$movesFY.source",
+                    reason: "$movesFY.unmappedReason",
+                    subsubcategory: "$movesFY.subsubcategory",
+                    subsubName: "$movesFY.subsubName",
+                    subcategoryId: "$movesFY.subcategoryId",
+                    subcategoryName: "$movesFY.subcategoryName",
+                    categoryId: "$movesFY.categoryId",
+                    categoryName: "$movesFY.categoryName",
+                    categoryBucket: "$movesFY.categoryBucket",
+                  },
+                  null,
+                ],
+              },
+            },
           },
         },
 
         {
           $addFields: {
+            unmappedMovements: {
+              $filter: {
+                input: "$unmappedMovementsRaw",
+                as: "move",
+                cond: { $ne: ["$$move", null] },
+              },
+            },
             total: {
               $subtract: [
                 "$ingresos",
@@ -1738,6 +1830,7 @@ export class HomeService {
                   totalWithFamily: { $toDouble: { $ifNull: ["$totalWithFamily", 0] } },
                   totalWithoutFamily: { $toDouble: { $ifNull: ["$totalWithoutFamily", 0] } },
                   unmappedCount: { $ifNull: ["$unmappedCount", 0] },
+                  unmappedMovements: "$unmappedMovements",
                 },
               },
             },
@@ -1817,6 +1910,47 @@ export class HomeService {
       console.log(error);
       throw CustomError.internalServer("Internal Server Error");
     }
+  }
+
+  async getUnmappedBucketMovements(userId: string) {
+    const overview = await this.getHomeBucketsSummary(userId);
+    const movements: any[] = [];
+    const reasonCounts = new Map<string, number>();
+
+    for (const group of overview.groups ?? []) {
+      for (const company of group.companies ?? []) {
+        const companyUnmapped = company.summary?.unmappedMovements ?? [];
+
+        for (const movement of companyUnmapped) {
+          const reason = movement.reason ?? "UNKNOWN";
+          reasonCounts.set(reason, (reasonCounts.get(reason) ?? 0) + 1);
+          movements.push({
+            ...movement,
+            group: {
+              _id: group._id,
+              name: group.name,
+            },
+            company: {
+              _id: company._id,
+              name: company.name,
+            },
+            fiscalYear: company.fiscalYear,
+          });
+        }
+      }
+    }
+
+    return {
+      user: overview.user,
+      summary: {
+        total: movements.length,
+        byReason: Array.from(reasonCounts.entries()).map(([reason, count]) => ({
+          reason,
+          count,
+        })),
+      },
+      movements,
+    };
   }
 
 }
