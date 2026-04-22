@@ -309,10 +309,57 @@ export class HomeService {
                       },
                     },
                   },
+
+                  {
+                    $lookup: {
+                      from: "subsubcategories",
+                      localField: "subsubcategory",
+                      foreignField: "_id",
+                      as: "subsub",
+                    },
+                  },
+                  { $addFields: { subsub: { $arrayElemAt: ["$subsub", 0] } } },
+
+                  {
+                    $lookup: {
+                      from: "subcategories",
+                      localField: "subsub.parent",
+                      foreignField: "_id",
+                      as: "subcat",
+                    },
+                  },
+                  { $addFields: { subcat: { $arrayElemAt: ["$subcat", 0] } } },
+
+                  {
+                    $lookup: {
+                      from: "categories",
+                      localField: "subcat.parent",
+                      foreignField: "_id",
+                      as: "cat",
+                    },
+                  },
+                  { $addFields: { cat: { $arrayElemAt: ["$cat", 0] } } },
+
+                  {
+                    $addFields: {
+                      movementBucket: {
+                        $toUpper: { $ifNull: ["$cat.bucket", "UNMAPPED"] },
+                      },
+                    },
+                  },
                   {
                     $group: {
                       _id: null,
                       balance: { $sum: "$amount" },
+                      balanceWithoutFamily: {
+                        $sum: {
+                          $cond: [
+                            { $eq: ["$movementBucket", "FAMILY"] },
+                            0,
+                            "$amount",
+                          ],
+                        },
+                      },
                       ingresos: {
                         $sum: {
                           $cond: [{ $gt: ["$amount", 0] }, "$amount", 0],
@@ -322,6 +369,34 @@ export class HomeService {
                         $sum: {
                           $cond: [
                             { $lt: ["$amount", 0] },
+                            { $abs: "$amount" },
+                            0,
+                          ],
+                        },
+                      },
+                      egresosWithoutFamily: {
+                        $sum: {
+                          $cond: [
+                            {
+                              $and: [
+                                { $lt: ["$amount", 0] },
+                                { $ne: ["$movementBucket", "FAMILY"] },
+                              ],
+                            },
+                            { $abs: "$amount" },
+                            0,
+                          ],
+                        },
+                      },
+                      family: {
+                        $sum: {
+                          $cond: [
+                            {
+                              $and: [
+                                { $lt: ["$amount", 0] },
+                                { $eq: ["$movementBucket", "FAMILY"] },
+                              ],
+                            },
                             { $abs: "$amount" },
                             0,
                           ],
@@ -342,6 +417,26 @@ export class HomeService {
                     $ifNull: [{ $arrayElemAt: ["$totalsDoc.balance", 0] }, 0],
                   },
                 },
+                balanceWithFamily: {
+                  $toDouble: {
+                    $ifNull: [{ $arrayElemAt: ["$totalsDoc.balance", 0] }, 0],
+                  },
+                },
+                balanceWithoutFamily: {
+                  $toDouble: {
+                    $ifNull: [{ $arrayElemAt: ["$totalsDoc.balanceWithoutFamily", 0] }, 0],
+                  },
+                },
+                totalWithFamily: {
+                  $toDouble: {
+                    $ifNull: [{ $arrayElemAt: ["$totalsDoc.balance", 0] }, 0],
+                  },
+                },
+                totalWithoutFamily: {
+                  $toDouble: {
+                    $ifNull: [{ $arrayElemAt: ["$totalsDoc.balanceWithoutFamily", 0] }, 0],
+                  },
+                },
                 ingresos: {
                   $toDouble: {
                     $ifNull: [{ $arrayElemAt: ["$totalsDoc.ingresos", 0] }, 0],
@@ -350,6 +445,21 @@ export class HomeService {
                 egresos: {
                   $toDouble: {
                     $ifNull: [{ $arrayElemAt: ["$totalsDoc.egresos", 0] }, 0],
+                  },
+                },
+                egresosWithFamily: {
+                  $toDouble: {
+                    $ifNull: [{ $arrayElemAt: ["$totalsDoc.egresos", 0] }, 0],
+                  },
+                },
+                egresosWithoutFamily: {
+                  $toDouble: {
+                    $ifNull: [{ $arrayElemAt: ["$totalsDoc.egresosWithoutFamily", 0] }, 0],
+                  },
+                },
+                family: {
+                  $toDouble: {
+                    $ifNull: [{ $arrayElemAt: ["$totalsDoc.family", 0] }, 0],
                   },
                 },
               },
@@ -363,8 +473,15 @@ export class HomeService {
                 name: 1,
                 type: 1, // borra si no existe
                 balance: 1,
+                balanceWithFamily: 1,
+                balanceWithoutFamily: 1,
+                totalWithFamily: 1,
+                totalWithoutFamily: 1,
                 ingresos: 1,
                 egresos: 1,
+                egresosWithFamily: 1,
+                egresosWithoutFamily: 1,
+                family: 1,
               },
             },
           ],
@@ -384,6 +501,24 @@ export class HomeService {
               },
             },
           },
+          companyTotalWithFamily: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companyAccounts", []] },
+                as: "acc",
+                in: { $ifNull: ["$$acc.balanceWithFamily", 0] },
+              },
+            },
+          },
+          companyTotalWithoutFamily: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companyAccounts", []] },
+                as: "acc",
+                in: { $ifNull: ["$$acc.balanceWithoutFamily", 0] },
+              },
+            },
+          },
           companyIngresos: {
             $sum: {
               $map: {
@@ -399,6 +534,33 @@ export class HomeService {
                 input: { $ifNull: ["$companyAccounts", []] },
                 as: "acc",
                 in: { $ifNull: ["$$acc.egresos", 0] },
+              },
+            },
+          },
+          companyEgresosWithFamily: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companyAccounts", []] },
+                as: "acc",
+                in: { $ifNull: ["$$acc.egresosWithFamily", 0] },
+              },
+            },
+          },
+          companyEgresosWithoutFamily: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companyAccounts", []] },
+                as: "acc",
+                in: { $ifNull: ["$$acc.egresosWithoutFamily", 0] },
+              },
+            },
+          },
+          companyFamily: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companyAccounts", []] },
+                as: "acc",
+                in: { $ifNull: ["$$acc.family", 0] },
               },
             },
           },
@@ -433,8 +595,15 @@ export class HomeService {
               },
               accounts: "$companyAccounts",
               balance: "$companyTotal",
+              balanceWithFamily: "$companyTotalWithFamily",
+              balanceWithoutFamily: "$companyTotalWithoutFamily",
+              totalWithFamily: "$companyTotalWithFamily",
+              totalWithoutFamily: "$companyTotalWithoutFamily",
               ingresos: "$companyIngresos",
               egresos: "$companyEgresos",
+              egresosWithFamily: "$companyEgresosWithFamily",
+              egresosWithoutFamily: "$companyEgresosWithoutFamily",
+              family: "$companyFamily",
             },
           },
           userDoc: {
@@ -459,6 +628,24 @@ export class HomeService {
               },
             },
           },
+          groupBalanceWithFamily: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companies", []] },
+                as: "comp",
+                in: { $ifNull: ["$$comp.balanceWithFamily", 0] },
+              },
+            },
+          },
+          groupBalanceWithoutFamily: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companies", []] },
+                as: "comp",
+                in: { $ifNull: ["$$comp.balanceWithoutFamily", 0] },
+              },
+            },
+          },
           groupIngresos: {
             $sum: {
               $map: {
@@ -477,6 +664,33 @@ export class HomeService {
               },
             },
           },
+          groupEgresosWithFamily: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companies", []] },
+                as: "comp",
+                in: { $ifNull: ["$$comp.egresosWithFamily", 0] },
+              },
+            },
+          },
+          groupEgresosWithoutFamily: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companies", []] },
+                as: "comp",
+                in: { $ifNull: ["$$comp.egresosWithoutFamily", 0] },
+              },
+            },
+          },
+          groupFamily: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$companies", []] },
+                as: "comp",
+                in: { $ifNull: ["$$comp.family", 0] },
+              },
+            },
+          },
         },
       },
 
@@ -490,8 +704,15 @@ export class HomeService {
               _id: "$_id",
               name: "$groupName",
               balance: "$groupbalance",
+              balanceWithFamily: "$groupBalanceWithFamily",
+              balanceWithoutFamily: "$groupBalanceWithoutFamily",
+              totalWithFamily: "$groupBalanceWithFamily",
+              totalWithoutFamily: "$groupBalanceWithoutFamily",
               ingresos: "$groupIngresos",
               egresos: "$groupEgresos",
+              egresosWithFamily: "$groupEgresosWithFamily",
+              egresosWithoutFamily: "$groupEgresosWithoutFamily",
+              family: "$groupFamily",
               companies: "$companies",
             },
           },
