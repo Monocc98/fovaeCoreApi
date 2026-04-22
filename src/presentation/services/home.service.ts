@@ -1696,6 +1696,18 @@ export class HomeService {
                 { $add: ["$egresosFijos", "$egresosVariables", "$family"] },
               ],
             },
+            totalWithFamily: {
+              $subtract: [
+                "$ingresos",
+                { $add: ["$egresosFijos", "$egresosVariables", "$family"] },
+              ],
+            },
+            totalWithoutFamily: {
+              $subtract: [
+                "$ingresos",
+                { $add: ["$egresosFijos", "$egresosVariables"] },
+              ],
+            },
           },
         },
 
@@ -1723,6 +1735,8 @@ export class HomeService {
                   egresosVariables: { $toDouble: { $ifNull: ["$egresosVariables", 0] } },
                   family: { $toDouble: { $ifNull: ["$family", 0] } },
                   total: { $toDouble: { $ifNull: ["$total", 0] } },
+                  totalWithFamily: { $toDouble: { $ifNull: ["$totalWithFamily", 0] } },
+                  totalWithoutFamily: { $toDouble: { $ifNull: ["$totalWithoutFamily", 0] } },
                   unmappedCount: { $ifNull: ["$unmappedCount", 0] },
                 },
               },
@@ -1748,6 +1762,12 @@ export class HomeService {
               },
               total: {
                 $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.total" } },
+              },
+              totalWithFamily: {
+                $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.totalWithFamily" } },
+              },
+              totalWithoutFamily: {
+                $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.totalWithoutFamily" } },
               },
               unmappedCount: {
                 $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.unmappedCount" } },
