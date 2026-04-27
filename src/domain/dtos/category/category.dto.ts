@@ -2,7 +2,8 @@ import { Validators } from "../../../config";
 
 export const CATEGORY_SCOPES = ['COMPANY', 'ACCOUNT'] as const;
 export const CATEGORY_TYPES = ['INCOME', 'EXPENSE'] as const;
-export const CATEGORY_BUCKETS = ['INCOME', 'FIXED_EXPENSE', 'VARIABLE_EXPENSE', 'FAMILY'] as const;
+export const CATEGORY_BUCKETS = ['INCOME', 'UTILITY', 'FIXED_EXPENSE', 'VARIABLE_EXPENSE', 'FAMILY'] as const;
+export const INCOME_CATEGORY_BUCKETS = ['INCOME', 'UTILITY'] as const;
 export const EXPENSE_CATEGORY_BUCKETS = ['FIXED_EXPENSE', 'VARIABLE_EXPENSE', 'FAMILY'] as const;
 
 const normalizeString = (value: unknown) => String(value ?? '').trim().toUpperCase();
@@ -23,8 +24,11 @@ const validateCategoryTypeAndBucket = (type: unknown, bucket: unknown): [string?
         return ['Invalid bucket'];
     }
 
-    if ( normalizedType === 'INCOME' && normalizedBucket !== 'INCOME' ) {
-        return ['Income categories must use bucket INCOME'];
+    if (
+        normalizedType === 'INCOME' &&
+        !INCOME_CATEGORY_BUCKETS.includes(normalizedBucket as typeof INCOME_CATEGORY_BUCKETS[number])
+    ) {
+        return ['Income categories must use bucket INCOME or UTILITY'];
     }
 
     if (

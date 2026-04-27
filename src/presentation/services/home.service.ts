@@ -1560,7 +1560,7 @@ export class HomeService {
                       {
                         $in: [
                           "$normalizedBucket",
-                          ["INCOME", "FIXED_EXPENSE", "VARIABLE_EXPENSE", "FAMILY"],
+                          ["INCOME", "UTILITY", "FIXED_EXPENSE", "VARIABLE_EXPENSE", "FAMILY"],
                         ],
                       },
                       "$normalizedBucket",
@@ -1604,7 +1604,7 @@ export class HomeService {
                               {
                                 $in: [
                                   "$normalizedBucket",
-                                  ["INCOME", "FIXED_EXPENSE", "VARIABLE_EXPENSE", "FAMILY"],
+                                  ["INCOME", "UTILITY", "FIXED_EXPENSE", "VARIABLE_EXPENSE", "FAMILY"],
                                 ],
                               },
                             ],
@@ -1673,7 +1673,7 @@ export class HomeService {
             ingresos: {
               $sum: {
                 $cond: [
-                  { $eq: ["$moveBucket", "INCOME"] },
+                  { $in: ["$moveBucket", ["INCOME", "UTILITY"]] },
                   { $cond: [{ $gt: ["$moveAmount", 0] }, "$moveAmount", 0] },
                   0,
                 ],

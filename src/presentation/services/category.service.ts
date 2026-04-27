@@ -249,11 +249,12 @@ export class CategoryService {
         return {
             categoryTypes: [...CATEGORY_TYPES],
             categoryBuckets: {
-                INCOME: ['INCOME'],
+                INCOME: ['INCOME', 'UTILITY'],
                 EXPENSE: [...EXPENSE_CATEGORY_BUCKETS],
             },
             bucketOptions: [
                 { value: 'INCOME', label: 'Income', categoryType: 'INCOME' },
+                { value: 'UTILITY', label: 'Utility', categoryType: 'INCOME' },
                 { value: 'FIXED_EXPENSE', label: 'Fixed Expense', categoryType: 'EXPENSE' },
                 { value: 'VARIABLE_EXPENSE', label: 'Variable Expense', categoryType: 'EXPENSE' },
                 { value: 'FAMILY', label: 'Family', categoryType: 'EXPENSE' },
