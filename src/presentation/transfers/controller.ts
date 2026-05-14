@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { sendErrorResponse, sendUnauthorizedError, sendValidationError } from "../errors/http-error-response";
 import { CustomError } from "../../domain";
 import { CreateTransferDto } from "../../domain/dtos/transfer/transfer.dto";
 import { TransferService } from "../services/transfer.service";
@@ -6,18 +7,11 @@ import { TransferService } from "../services/transfer.service";
 export class TransferController {
   constructor(private readonly transferService: TransferService) {}
 
-  private handleError = (error: unknown, res: Response) => {
-    if (error instanceof CustomError) {
-      return res.status(error.statusCode).json({ error: error.message });
-    }
-
-    console.log(`${error}`);
-    return res.status(500).json({ error: "Internal server error " });
-  };
+  private handleError = (error: unknown, res: Response) => sendErrorResponse(res, error);
 
   createTransfer = async (req: Request, res: Response) => {
     const [error, dto] = CreateTransferDto.create(req.body);
-    if (error) return res.status(400).json({ error });
+    if (error) return sendValidationError(res, error);
 
     this.transferService
       .createTransfer(dto!)
@@ -43,3 +37,5 @@ export class TransferController {
       .catch((serviceError) => this.handleError(serviceError, res));
   };
 }
+
+

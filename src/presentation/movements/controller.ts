@@ -1,4 +1,5 @@
 import { Response, Request } from "express";
+import { sendErrorResponse, sendUnauthorizedError, sendValidationError } from "../errors/http-error-response";
 import {
   CreateMovementDto,
   CustomError,
@@ -13,19 +14,11 @@ export class MovementController {
   // DI
   constructor(private readonly movementService: MovementService) {}
 
-  private handleError = (error: unknown, res: Response) => {
-    if (error instanceof CustomError) {
-      return res.status(error.statusCode).json({ error: error.message });
-    }
-
-    console.log(`${error}`);
-
-    return res.status(500).json({ error: "Internal server error " });
-  };
+  private handleError = (error: unknown, res: Response) => sendErrorResponse(res, error);
 
   createMovement = async (req: Request, res: Response) => {
     const [error, createMovementDto] = CreateMovementDto.create(req.body);
-    if (error) return res.status(400).json({ error });
+    if (error) return sendValidationError(res, error);
 
     this.movementService
       .createMovement(createMovementDto!)
@@ -62,7 +55,7 @@ export class MovementController {
     const idMovement = req.params.idMovement;
 
     const [error, updateMovement] = UpdateMovementDto.update(req.body);
-    if (error) return res.status(400).json({ error });
+    if (error) return sendValidationError(res, error);
 
     this.movementService
       .updateMovement(idMovement, updateMovement!)
@@ -110,10 +103,10 @@ export class MovementController {
   uploadSolucionFactible = async (req: Request, res: Response) => {
     try {
       const [error, dto] = ImportSolucionFactibleDto.create(req.body);
-      if (error) return res.status(400).json({ error });
+      if (error) return sendValidationError(res, error);
 
       if (!req.file) {
-        return res.status(400).json({ error: "Missing file" });
+        return sendValidationError(res, "Missing file", { file: "El archivo es obligatorio" });
       }
 
       const result = await this.movementService.importSolucionFactible(
@@ -132,7 +125,7 @@ export class MovementController {
       const { batchId } = req.params;
 
       const [error, dto] = ConfirmSolucionFactibleDto.create(req.body);
-      if (error) return res.status(400).json({ error });
+      if (error) return sendValidationError(res, error);
 
       const result = await this.movementService.confirmSolucionFactible(
         batchId,
@@ -147,10 +140,10 @@ export class MovementController {
   uploadServoEscolar = async (req: Request, res: Response) => {
     try {
       const [error, dto] = ImportSolucionFactibleDto.create(req.body);
-      if (error) return res.status(400).json({ error });
+      if (error) return sendValidationError(res, error);
 
       if (!req.file) {
-        return res.status(400).json({ error: "Missing file" });
+        return sendValidationError(res, "Missing file", { file: "El archivo es obligatorio" });
       }
 
       const result = await this.movementService.importServoEscolar(
@@ -163,3 +156,5 @@ export class MovementController {
     }
   };
 }
+
+

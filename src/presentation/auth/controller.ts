@@ -1,7 +1,8 @@
 import { Request, Response } from "express";
 import { envs } from "../../config";
-import { CustomError, LoginUserDto, RegisterUserDto } from "../../domain";
+import { LoginUserDto, RegisterUserDto } from "../../domain";
 import { AuthService } from "../services";
+import { sendErrorResponse, sendValidationError } from "../errors/http-error-response";
 import {
     clearAuthCookies,
     createRandomToken,
@@ -17,36 +18,13 @@ export class AuthController {
         public readonly authService: AuthService,
     ) {}
 
-    private handleError = ( error: unknown, res: Response ) => {
-        const requestId = String(res.getHeader("x-request-id") || "");
-        if ( error instanceof CustomError) {
-            return res.status(error.statusCode).json({
-                error: {
-                    status: error.statusCode,
-                    code: `AUTH_${error.statusCode}`,
-                    message: error.message,
-                    requestId,
-                },
-            });
-        }
-
-        console.log(`${ error }`);
-        
-        return res.status(500).json({
-            error: {
-                status: 500,
-                code: "INTERNAL_SERVER_ERROR",
-                message: "Internal server error",
-                requestId,
-            },
-        });
-    }
+    private handleError = (error: unknown, res: Response) => sendErrorResponse(res, error);
 
     registerUser = ( req: Request, res: Response) => {
 
         const [ error, registerDto ] = RegisterUserDto.create(req.body);
 
-        if ( error ) return res.status(400).json({ error })
+        if ( error ) return sendValidationError(res, error);
         
         this.authService.registerUser(registerDto!)
             .then( ({ accessToken, refreshToken, ...payload }) => {
@@ -61,7 +39,7 @@ export class AuthController {
                     },
                 });
             })
-            .catch( error => this.handleError(error, res) )
+            .catch( error => this.handleError(error, res) );
 
     }
 
@@ -69,7 +47,7 @@ export class AuthController {
 
         const [ error, loginUserDto ] = LoginUserDto.create(req.body);
 
-        if ( error ) return res.status(400).json({ error })
+        if ( error ) return sendValidationError(res, error);
         
         this.authService.loginUser(loginUserDto!)
             .then( ({ accessToken, refreshToken, ...payload }) => {
@@ -84,7 +62,7 @@ export class AuthController {
                     },
                 });
             })
-            .catch( error => this.handleError(error, res) )
+            .catch( error => this.handleError(error, res) );
 
 
     }

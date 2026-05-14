@@ -10,6 +10,7 @@ export interface AdminCompanyPermissionInput {
     companyId: string;
     status: 'active' | 'disabled';
     baseRole: 'ADMIN' | 'VIEWER';
+    dividendShare: number;
     accounts: AdminAccountPermissionInput[];
 }
 
@@ -35,6 +36,7 @@ export class UpdateAdminUserPermissionsDto {
             const companyId = String(companyPermission?.companyId || '');
             const status = String(companyPermission?.status || '') as 'active' | 'disabled';
             const baseRole = String(companyPermission?.baseRole || '') as 'ADMIN' | 'VIEWER';
+            const dividendShare = Number(companyPermission?.dividendShare ?? 0);
             const accounts = Array.isArray(companyPermission?.accounts) ? companyPermission.accounts : null;
 
             if ( !companyId ) return ['Missing companyId'];
@@ -42,6 +44,7 @@ export class UpdateAdminUserPermissionsDto {
             if ( companyIds.has(companyId) ) return ['Duplicate companyId'];
             if ( !['active', 'disabled'].includes(status) ) return ['Invalid company status'];
             if ( !['ADMIN', 'VIEWER'].includes(baseRole) ) return ['Invalid baseRole'];
+            if ( !Number.isFinite(dividendShare) || dividendShare < 0 || dividendShare > 100 ) return ['Invalid dividend share'];
             if ( accounts === null ) return ['accounts must be an array'];
 
             companyIds.add(companyId);
@@ -71,6 +74,7 @@ export class UpdateAdminUserPermissionsDto {
                 companyId,
                 status,
                 baseRole,
+                dividendShare,
                 accounts: normalizedAccounts,
             });
         }

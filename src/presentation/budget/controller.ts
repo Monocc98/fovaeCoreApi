@@ -1,4 +1,5 @@
 import { Response, Request } from "express";
+import { sendErrorResponse, sendUnauthorizedError, sendValidationError } from "../errors/http-error-response";
 import { CustomError } from "../../domain";
 import { BudgetService } from "../services/budget.service";
 import { CreateBudgetDto, UpdateBudgetDto } from "../../domain/dtos/budget/budget.dto";
@@ -12,20 +13,12 @@ export class BudgetController {
         private readonly budgetService: BudgetService,
     ) {}
 
-    private handleError = ( error: unknown, res: Response ) => {
-        if ( error instanceof CustomError) {
-            return res.status(error.statusCode).json({ error: error.message });
-        }
-
-        console.log(`${ error }`);
-        
-        return res.status(500).json({ error: 'Internal server error '});
-    }
+    private handleError = (error: unknown, res: Response) => sendErrorResponse(res, error);
 
     createBudget = async(req: Request, res: Response) => {
 
         const [ error, createBudgetDto ] = CreateBudgetDto.create(req.body);
-        if ( error ) return res.status(400).json({ error })
+        if ( error ) return sendValidationError(res, error)
 
         this.budgetService.createBudget( createBudgetDto! )
             .then( budget => res.status(201).json( budget ) )
@@ -69,7 +62,7 @@ export class BudgetController {
         const idBudget = req.params.idBudget;
 
         const [ error, updateBudget ] = UpdateBudgetDto.update(req.body);
-        if ( error ) return res.status(400).json({ error })
+        if ( error ) return sendValidationError(res, error)
 
         this.budgetService.updateBudget( idBudget, updateBudget! )
             .then( budget => res.status(201).json( budget ) )
@@ -88,3 +81,5 @@ export class BudgetController {
 
     }
 }
+
+

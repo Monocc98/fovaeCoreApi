@@ -2,13 +2,13 @@ import { NextFunction, Request, Response } from "express";
 import { JwtAdapter } from "../../config";
 import { UserModel } from "../../data";
 import { getAccessTokenFromRequest } from "../auth/auth-session.helper";
+import { sendErrorEnvelope, sendErrorResponse } from "../errors/http-error-response";
 
 
 export class AuthMiddleware {
 
     static async validateJWT( req: Request, res: Response, next: NextFunction ) {
 
-        const requestId = String(res.getHeader("x-request-id") || "");
         const accessTokenFromCookie = getAccessTokenFromRequest(req);
         const authorization = String(req.header('Authorization') || '');
         const [scheme = "", credentials = ""] = authorization.trim().split(/\s+/);
@@ -16,13 +16,11 @@ export class AuthMiddleware {
         const token = accessTokenFromCookie || bearerToken;
 
         if ( !token ) {
-            return res.status(401).json({
-                error: {
-                    status: 401,
-                    code: "AUTH_401",
-                    message: "Authentication required",
-                    requestId,
-                },
+            return sendErrorEnvelope(res, {
+                statusCode: 401,
+                code: "UNAUTHORIZED",
+                message: "Authentication required",
+                userMessage: "Tu sesión no es válida o expiró.",
             });
         }
 
@@ -30,36 +28,30 @@ export class AuthMiddleware {
             
             const payload = await JwtAdapter.validarToken<{ id: string; type?: string }>(token);
             if ( !payload || !payload.id || (payload.type && payload.type !== "access") ) {
-                return res.status(401).json({
-                    error: {
-                        status: 401,
-                        code: "AUTH_401",
-                        message: "Access token invalid or expired",
-                        requestId,
-                    },
+                return sendErrorEnvelope(res, {
+                    statusCode: 401,
+                    code: "SESSION_EXPIRED",
+                    message: "Access token invalid or expired",
+                    userMessage: "Tu sesión expiró. Inicia sesión nuevamente.",
                 });
             }
 
             const user = await UserModel.findById( payload.id );
             if ( !user ) {
-                return res.status(401).json({
-                    error: {
-                        status: 401,
-                        code: "AUTH_401",
-                        message: "User not authenticated",
-                        requestId,
-                    },
+                return sendErrorEnvelope(res, {
+                    statusCode: 401,
+                    code: "UNAUTHORIZED",
+                    message: "User not authenticated",
+                    userMessage: "Tu sesión no es válida o expiró.",
                 });
             }
 
             if ( user.status === 'disabled' ) {
-                return res.status(401).json({
-                    error: {
-                        status: 401,
-                        code: "AUTH_401",
-                        message: "User is disabled",
-                        requestId,
-                    },
+                return sendErrorEnvelope(res, {
+                    statusCode: 403,
+                    code: "USER_DISABLED",
+                    message: "User is disabled",
+                    userMessage: "Tu usuario está deshabilitado.",
                 });
             }
 
@@ -74,17 +66,7 @@ export class AuthMiddleware {
 
 
         } catch (error) {
-            
-            console.log(error);
-            res.status(500).json({
-                error: {
-                    status: 500,
-                    code: "INTERNAL_SERVER_ERROR",
-                    message: "Internal server error",
-                    requestId,
-                },
-            });
-
+            return sendErrorResponse(res, error);
         }
         
     }

@@ -11,18 +11,23 @@ export class CreateMembershipDto {
         public readonly company: string,
         public readonly role: string,
         public readonly status: string,
+        public readonly dividendShare: number,
     ) {}
 
     static create( object: { [key: string]: any } ): [string?, CreateMembershipDto?] {
 
-        const { user, company, role, status } = object;
+        const { user, company, role, status, dividendShare = 0 } = object;
+        const normalizedDividendShare = Number(dividendShare);
         
         if ( !user ) return ['Missing User'];
         if ( !company ) return ['Missing Company'];
         if ( !Validators.isMongoID(user) ) return ['Invalid User ID'];
         if ( !Validators.isMongoID(company) ) return ['Invalid Company ID'];
+        if ( !Number.isFinite(normalizedDividendShare) || normalizedDividendShare < 0 || normalizedDividendShare > 100 ) {
+            return ['Invalid dividend share'];
+        }
         
-        return [undefined,  new CreateMembershipDto( user, company, role, status )]
+        return [undefined,  new CreateMembershipDto( user, company, role, status, normalizedDividendShare )]
 
     }
 }

@@ -153,13 +153,63 @@
 
 // }
 import { Validators } from "../../config";
-import { MembershipModel } from "../../data";
+import {
+  AccountModel,
+  CompanyModel,
+  GroupModel,
+  MembershipModel,
+  MovementModel,
+} from "../../data";
+import { FiscalYear_CompanyModel } from "../../data/mongo/models/fiscalYear_Company.model";
 import { CustomError } from "../../domain";
 
 export class HomeService {
   private readonly incomeFamilyCategoryId = Validators.convertToUid("69efb5ed40a294d3c5d820e6");
 
   constructor() {}
+
+  private toId(value: any) {
+    return `${value?._id ?? value?.id ?? value ?? ""}`;
+  }
+
+  private async getActiveFiscalYear(companyId: any) {
+    const now = new Date();
+    const links = await FiscalYear_CompanyModel.find({ company: companyId })
+      .populate("fiscalYear")
+      .lean();
+
+    const active = links
+      .map((link: any) => {
+        const fy = link.fiscalYear;
+        if (!fy?.startDate) return null;
+
+        const startDate = new Date(fy.startDate);
+        const endDate = fy.endDate
+          ? new Date(fy.endDate)
+          : new Date(startDate.getFullYear() + 1, startDate.getMonth(), startDate.getDate());
+
+        return {
+          _id: fy._id,
+          name: fy.name,
+          startDate,
+          endDate,
+        };
+      })
+      .filter((fy): fy is { _id: any; name: string; startDate: Date; endDate: Date } => Boolean(fy))
+      .filter((fy) => fy.startDate <= now && fy.endDate > now)
+      .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())[0];
+
+    return active ?? null;
+  }
+
+  private buildDateConditions(fiscalYear: Awaited<ReturnType<HomeService["getActiveFiscalYear"]>>) {
+    if (!fiscalYear) return [];
+
+    return [
+      { $gte: ["$occurredAt", fiscalYear.startDate] },
+      { $lt: ["$occurredAt", fiscalYear.endDate] },
+    ];
+  }
 
   async getHomeOverview(userId: string) {
   const uid = Validators.convertToUid(userId);
@@ -348,7 +398,15 @@ export class HomeService {
                         $toUpper: { $ifNull: ["$cat.bucket", "UNMAPPED"] },
                       },
                       isIncomeFamilyCategory: {
-                        $eq: ["$cat._id", this.incomeFamilyCategoryId],
+                        $or: [
+                          { $eq: ["$cat._id", this.incomeFamilyCategoryId] },
+                          {
+                            $eq: [
+                              { $toUpper: { $ifNull: ["$cat.bucket", ""] } },
+                              "UTILITY",
+                            ],
+                          },
+                        ],
                       },
                     },
                   },
@@ -1641,6 +1699,17 @@ export class HomeService {
                   normalizedBucket: {
                     $toUpper: { $ifNull: ["$cat.bucket", ""] },
                   },
+                  isIncomeFamilyCategory: {
+                    $or: [
+                      { $eq: ["$cat._id", this.incomeFamilyCategoryId] },
+                      {
+                        $eq: [
+                          { $toUpper: { $ifNull: ["$cat.bucket", ""] } },
+                          "UTILITY",
+                        ],
+                      },
+                    ],
+                  },
                 },
               },
               {
@@ -1767,6 +1836,20 @@ export class HomeService {
                 $cond: [
                   { $in: ["$moveBucket", ["INCOME", "UTILITY"]] },
                   { $cond: [{ $gt: ["$moveAmount", 0] }, "$moveAmount", 0] },
+                  0,
+                ],
+              },
+            },
+            utilidades: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$moveBucket", "UTILITY"] },
+                      { $gt: ["$moveAmount", 0] },
+                    ],
+                  },
+                  "$moveAmount",
                   0,
                 ],
               },
@@ -1945,6 +2028,7 @@ export class HomeService {
                 },
                 summary: {
                   ingresos: { $toDouble: { $ifNull: ["$ingresos", 0] } },
+                  utilidades: { $toDouble: { $ifNull: ["$utilidades", 0] } },
                   ingresosWithoutFamily: { $toDouble: { $ifNull: ["$ingresosWithoutFamily", 0] } },
                   incomeFamily: { $toDouble: { $ifNull: ["$incomeFamily", 0] } },
                   egresosFijos: { $toDouble: { $ifNull: ["$egresosFijos", 0] } },
@@ -1970,6 +2054,9 @@ export class HomeService {
               },
               ingresosWithoutFamily: {
                 $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.ingresosWithoutFamily" } },
+              },
+              utilidades: {
+                $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.utilidades" } },
               },
               incomeFamily: {
                 $sum: { $map: { input: "$companies", as: "c", in: "$$c.summary.incomeFamily" } },
@@ -2040,6 +2127,273 @@ export class HomeService {
       console.log(error);
       throw CustomError.internalServer("Internal Server Error");
     }
+  }
+
+  async getGroupDividends(
+    userId: string,
+    userRole: string,
+    groupId: string,
+    requestedUserId?: string
+  ) {
+    if (!Validators.isMongoID(groupId)) {
+      throw CustomError.badRequest("Invalid group ID");
+    }
+
+    if (requestedUserId && !Validators.isMongoID(requestedUserId)) {
+      throw CustomError.badRequest("Invalid user ID");
+    }
+
+    const groupObjectId = Validators.convertToUid(groupId);
+    const group = await GroupModel.findById(groupObjectId).lean();
+    if (!group) throw CustomError.notFound("Group not found");
+
+    const companies: any[] = await CompanyModel.find({ group: groupObjectId })
+      .select("_id name")
+      .lean();
+    const companyIds: any[] = companies.map((company: any) => company._id);
+
+    const memberships = await MembershipModel.find({
+      company: { $in: companyIds },
+      status: "active",
+    })
+      .populate("user", "name email role")
+      .lean();
+
+    const viewerMemberships = memberships.filter(
+      (membership: any) => this.toId(membership.user) === userId
+    );
+    const canInspectAll =
+      userRole === "SUPER_ADMIN" ||
+      viewerMemberships.some((membership: any) => membership.role === "ADMIN");
+
+    if (!canInspectAll && viewerMemberships.length === 0) {
+      throw CustomError.forbidden("User does not have access to this group");
+    }
+
+    const firstPartnerMembership = (memberships as any[]).find(
+      (membership: any) => Number(membership.dividendShare ?? 0) > 0 && membership.user
+    );
+    const targetUserId =
+      canInspectAll && requestedUserId
+        ? requestedUserId
+        : canInspectAll && viewerMemberships.length === 0 && firstPartnerMembership
+          ? this.toId(firstPartnerMembership.user)
+          : userId;
+    const targetObjectId = Validators.convertToUid(targetUserId);
+    const targetMemberships = memberships.filter(
+      (membership: any) => this.toId(membership.user) === targetUserId
+    );
+
+    if (targetMemberships.length === 0) {
+      throw CustomError.notFound("User is not a member of this group");
+    }
+
+    const targetUser = targetMemberships[0].user as any;
+    const partnersMap = new Map<string, any>();
+    for (const membership of memberships as any[]) {
+      const share = Number(membership.dividendShare ?? 0);
+      if (share <= 0 || !membership.user) continue;
+
+      const partnerId = this.toId(membership.user);
+      const prev = partnersMap.get(partnerId);
+      partnersMap.set(partnerId, {
+        id: partnerId,
+        name: membership.user.name ?? membership.user.email ?? "Socio",
+        email: membership.user.email ?? "",
+        companiesCount: (prev?.companiesCount ?? 0) + 1,
+      });
+    }
+
+    const companyResults = [];
+    const familyExpenses = [];
+
+    for (const company of companies as any[]) {
+      const accountDocs: any[] = await AccountModel.find({ company: company._id })
+        .select("_id")
+        .lean();
+      const accountIds: any[] = accountDocs.map((account: any) => account._id);
+      const fiscalYear = await this.getActiveFiscalYear(company._id);
+      const dateConditions = this.buildDateConditions(fiscalYear);
+
+      const [utilityDoc] = await MovementModel.aggregate([
+        {
+          $match: {
+            $expr: {
+              $and: [
+                { $in: ["$account", accountIds] },
+                { $ne: ["$source", "TRANSFER"] },
+                { $gt: ["$amount", 0] },
+                ...dateConditions,
+              ],
+            },
+          },
+        },
+        {
+          $lookup: {
+            from: "subsubcategories",
+            localField: "subsubcategory",
+            foreignField: "_id",
+            as: "subsub",
+          },
+        },
+        { $addFields: { subsub: { $arrayElemAt: ["$subsub", 0] } } },
+        {
+          $lookup: {
+            from: "subcategories",
+            localField: "subsub.parent",
+            foreignField: "_id",
+            as: "subcat",
+          },
+        },
+        { $addFields: { subcat: { $arrayElemAt: ["$subcat", 0] } } },
+        {
+          $lookup: {
+            from: "categories",
+            localField: "subcat.parent",
+            foreignField: "_id",
+            as: "cat",
+          },
+        },
+        { $addFields: { cat: { $arrayElemAt: ["$cat", 0] } } },
+        { $match: { "cat.bucket": "UTILITY" } },
+        { $group: { _id: null, total: { $sum: "$amount" } } },
+      ]);
+
+      const membership = targetMemberships.find(
+        (item: any) => this.toId(item.company) === this.toId(company._id)
+      ) as any;
+      const share = Number(membership?.dividendShare ?? 0);
+      const utilityTotal = Number(utilityDoc?.total ?? 0);
+      const grossDividend = utilityTotal * (share / 100);
+
+      companyResults.push({
+        id: this.toId(company._id),
+        name: company.name,
+        fiscalYear: fiscalYear
+          ? {
+              id: this.toId(fiscalYear._id),
+              name: fiscalYear.name,
+              startDate: fiscalYear.startDate,
+              endDate: fiscalYear.endDate,
+            }
+          : null,
+        utilityTotal,
+        dividendShare: share,
+        grossDividend,
+      });
+
+      const companyExpenses = await MovementModel.aggregate([
+        {
+          $match: {
+            $expr: {
+              $and: [
+                { $in: ["$account", accountIds] },
+                { $ne: ["$source", "TRANSFER"] },
+                { $lt: ["$amount", 0] },
+                ...dateConditions,
+              ],
+            },
+          },
+        },
+        {
+          $lookup: {
+            from: "subsubcategories",
+            localField: "subsubcategory",
+            foreignField: "_id",
+            as: "subsub",
+          },
+        },
+        { $addFields: { subsub: { $arrayElemAt: ["$subsub", 0] } } },
+        {
+          $lookup: {
+            from: "subcategories",
+            localField: "subsub.parent",
+            foreignField: "_id",
+            as: "subcat",
+          },
+        },
+        { $addFields: { subcat: { $arrayElemAt: ["$subcat", 0] } } },
+        {
+          $lookup: {
+            from: "categories",
+            localField: "subcat.parent",
+            foreignField: "_id",
+            as: "cat",
+          },
+        },
+        { $addFields: { cat: { $arrayElemAt: ["$cat", 0] } } },
+        {
+          $match: {
+            "cat.bucket": "FAMILY",
+            "subcat.assignedUser": targetObjectId,
+          },
+        },
+        {
+          $project: {
+            _id: 1,
+            description: 1,
+            comments: 1,
+            occurredAt: 1,
+            amount: 1,
+            categoryName: "$cat.name",
+            subcategoryName: "$subcat.name",
+            subsubcategoryName: "$subsub.name",
+          },
+        },
+        { $sort: { occurredAt: -1 } },
+      ]);
+
+      familyExpenses.push(
+        ...companyExpenses.map((movement: any) => ({
+          id: this.toId(movement._id),
+          company: {
+            id: this.toId(company._id),
+            name: company.name,
+          },
+          description: movement.description,
+          comments: movement.comments,
+          occurredAt: movement.occurredAt,
+          amount: Math.abs(Number(movement.amount ?? 0)),
+          categoryName: movement.categoryName,
+          subcategoryName: movement.subcategoryName,
+          subsubcategoryName: movement.subsubcategoryName,
+        }))
+      );
+    }
+
+    const grossDividends = companyResults.reduce(
+      (total, company) => total + company.grossDividend,
+      0
+    );
+    const familyDiscounts = familyExpenses.reduce(
+      (total, movement: any) => total + movement.amount,
+      0
+    );
+
+    return {
+      group: {
+        id: this.toId(group._id),
+        name: group.name,
+      },
+      user: {
+        id: targetUserId,
+        name: targetUser?.name ?? targetUser?.email ?? "Socio",
+        email: targetUser?.email ?? "",
+      },
+      permissions: {
+        canInspectAll,
+      },
+      partners: Array.from(partnersMap.values()).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      ),
+      companies: companyResults,
+      familyExpenses,
+      summary: {
+        grossDividends,
+        familyDiscounts,
+        remainingDividends: grossDividends - familyDiscounts,
+      },
+    };
   }
 
   async getUnmappedBucketMovements(userId: string) {

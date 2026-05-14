@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import crypto from 'crypto';
 import { envs } from '../config';
 import { CsrfMiddleware } from './middlewares/csrf.middleware';
+import { ErrorMiddleware } from './middlewares/error.middleware';
 
 interface Options {
   port: number;
@@ -79,6 +80,8 @@ export class Server {
       const indexPath = path.join( __dirname + `../../../${ this.publicPath }/index.html` );
       res.sendFile(indexPath);
     });
+
+    this.app.use(ErrorMiddleware.handle);
     
 
     // IMPORTANTE: escuchar en 0.0.0.0 para aceptar conexiones externas

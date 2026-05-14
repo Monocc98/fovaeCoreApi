@@ -1,4 +1,5 @@
 import { Response, Request } from "express";
+import { sendErrorResponse, sendUnauthorizedError, sendValidationError } from "../errors/http-error-response";
 import { CreateAccountDto, CustomError, UpdateAccountDto } from "../../domain";
 import { AccountService } from "../services/account.service";
 
@@ -11,20 +12,12 @@ export class AccountsController {
         private readonly accountService: AccountService,
     ) {}
 
-    private handleError = ( error: unknown, res: Response ) => {
-        if ( error instanceof CustomError) {
-            return res.status(error.statusCode).json({ error: error.message });
-        }
-
-        console.log(`${ error }`);
-        
-        return res.status(500).json({ error: 'Internal server error '});
-    }
+    private handleError = (error: unknown, res: Response) => sendErrorResponse(res, error);
 
     createAccount = async(req: Request, res: Response) => {
 
         const [ error, createAccountDto ] = CreateAccountDto.create(req.body);
-        if ( error ) return res.status(400).json({ error })
+        if ( error ) return sendValidationError(res, error)
 
         this.accountService.createAccount( createAccountDto! )
             .then( (account) => {
@@ -59,7 +52,7 @@ export class AccountsController {
         const idAccount = req.params.idAccount;
 
         const [ error, updateAccount ] = UpdateAccountDto.update(req.body);
-        if ( error ) return res.status(400).json({ error })
+        if ( error ) return sendValidationError(res, error)
 
         this.accountService.updateAccount( idAccount, updateAccount! )
             .then( account => res.status(201).json( account ) )
@@ -78,3 +71,5 @@ export class AccountsController {
 
     }
 }
+
+

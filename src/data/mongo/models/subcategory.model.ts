@@ -24,6 +24,10 @@ const subcategorySchema = new mongoose.Schema({
     ref: 'Company',
     required: true,
   },
+  assignedUser: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
   sortIndex: {
     type: Number,
     default: 0,

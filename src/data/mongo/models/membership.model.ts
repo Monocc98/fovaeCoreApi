@@ -21,6 +21,12 @@ const membershipSchema = new mongoose.Schema({
     enum: ['active', 'invited', 'disabled'],
     default: 'active',
   },
+  dividendShare: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100,
+  },
 });
 
 membershipSchema.set('toJSON', {

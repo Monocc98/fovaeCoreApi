@@ -19,6 +19,8 @@ export class CompanyRoutes {
     // Definir las rutas
     router.get('/', controller.getCompanies);
     router.post('/', controller.createCompany);
+    router.get('/:id/fiscal-profile', controller.getFiscalProfile);
+    router.put('/:id/fiscal-profile', controller.updateFiscalProfile);
 
 
 

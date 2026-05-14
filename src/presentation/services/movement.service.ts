@@ -1172,7 +1172,8 @@ export class MovementService {
           );
         }
 
-        const description = `${row.externalCategoryRaw} - ${row.externalName}`;
+        const description = String(row.externalCategoryRaw ?? "").trim();
+        const comments = String(row.externalName ?? "").trim();
 
         if (!existing) {
           if (isServoBatch) {
@@ -1223,7 +1224,7 @@ export class MovementService {
 
           movementsToInsert.push({
             description,
-            comments: "",
+            comments,
             account: accountForRow,
             occurredAt: row.occurredAt,
             recordedAt: new Date(),
@@ -1248,8 +1249,15 @@ export class MovementService {
           toUtcDateOnly(new Date(existing.occurredAt)).getTime() ===
           toUtcDateOnly(new Date(row.occurredAt)).getTime();
         const sameDescription = String(existing.description ?? "") === description;
+        const sameComments = String(existing.comments ?? "") === comments;
 
-        if (sameAmount && sameSubsubcategory && sameOccurredAt && sameDescription) {
+        if (
+          sameAmount &&
+          sameSubsubcategory &&
+          sameOccurredAt &&
+          sameDescription &&
+          sameComments
+        ) {
           skippedCount += 1;
           continue;
         }
@@ -1275,7 +1283,7 @@ export class MovementService {
             update: {
               $set: {
                 description,
-                comments: "",
+                comments,
                 occurredAt: row.occurredAt,
                 amount: row.amount,
                 subsubcategory: subsubcategoryId,

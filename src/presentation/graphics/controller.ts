@@ -1,23 +1,17 @@
 import { Request, Response } from "express";
+import { sendErrorResponse, sendUnauthorizedError, sendValidationError } from "../errors/http-error-response";
 import { CustomError } from "../../domain";
 import { GraphicsService } from "../services/graphics.service";
 
 export class GraphicsController {
   constructor(private readonly graphicsService: GraphicsService) {}
 
-  private handleError = (error: unknown, res: Response) => {
-    if (error instanceof CustomError) {
-      return res.status(error.statusCode).json({ error: error.message });
-    }
-
-    console.log(`${error}`);
-    return res.status(500).json({ error: "Internal server error " });
-  };
+  private handleError = (error: unknown, res: Response) => sendErrorResponse(res, error);
 
   getExpenseBudgetTreeByMonth = async (req: Request, res: Response) => {
     const user = (req as any).user;
     if (!user?.id) {
-      return res.status(401).json({ error: "User not authenticated" });
+      return sendUnauthorizedError(res, "User not authenticated");
     }
     const { idCompany } = req.params;
 
@@ -27,3 +21,5 @@ export class GraphicsController {
       .catch((error) => this.handleError(error, res));
   };
 }
+
+

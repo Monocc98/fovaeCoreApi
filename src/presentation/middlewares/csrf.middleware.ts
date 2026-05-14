@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { envs } from "../../config";
+import { sendErrorEnvelope } from "../errors/http-error-response";
 
 const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -22,16 +23,12 @@ export class CsrfMiddleware {
 
     const csrfCookie = String(req.cookies?.[envs.CSRF_COOKIE_NAME] || "");
     const csrfHeader = String(req.header(envs.CSRF_HEADER_NAME) || "");
-    const requestId = String(res.getHeader("x-request-id") || "");
-
     if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
-      return res.status(403).json({
-        error: {
-          status: 403,
-          code: "AUTH_403",
-          message: "CSRF validation failed",
-          requestId,
-        },
+      return sendErrorEnvelope(res, {
+        statusCode: 403,
+        code: "FORBIDDEN",
+        message: "CSRF validation failed",
+        userMessage: "No se pudo validar la sesión de seguridad. Intenta recargar la página.",
       });
     }
 

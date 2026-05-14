@@ -116,6 +116,7 @@ export class AdminUsersService {
                 membershipId: String(membership._id),
                 status: membership.status,
                 baseRole: membership.role === "ADMIN" ? "ADMIN" : "VIEWER",
+                dividendShare: Number(membership.dividendShare ?? 0),
                 accounts: accountsView,
             };
         });
@@ -163,10 +164,12 @@ export class AdminUsersService {
                     company: companyIdMongo,
                     role: companyPermission.baseRole,
                     status: companyPermission.status,
+                    dividendShare: companyPermission.dividendShare,
                 });
             } else {
                 membership.role = companyPermission.baseRole;
                 membership.status = companyPermission.status;
+                membership.dividendShare = companyPermission.dividendShare;
             }
 
             await membership.save(session ? { session } : undefined);

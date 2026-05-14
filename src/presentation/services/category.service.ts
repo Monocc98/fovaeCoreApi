@@ -173,6 +173,9 @@ export class CategoryService {
 
             const subcategory = new SubcategoryModel({
                 ...createSubcategoryDto,
+                ...(createSubcategoryDto.assignedUser
+                    ? { assignedUser: Validators.convertToUid(createSubcategoryDto.assignedUser) }
+                    : {}),
                 sortIndex: siblings.length,
             });
 
@@ -308,7 +311,34 @@ export class CategoryService {
                       },
                     },
 
-                    { $project: { _id: 1, name: 1, parent: 1, company: 1, scope: 1, type: 1, subsubcategories: 1, sortIndex: 1 } },
+                    {
+                      $lookup: {
+                        from: "users",
+                        localField: "assignedUser",
+                        foreignField: "_id",
+                        as: "assignedUserDoc",
+                      },
+                    },
+                    { $addFields: { assignedUserDoc: { $arrayElemAt: ["$assignedUserDoc", 0] } } },
+
+                    {
+                      $project: {
+                        _id: 1,
+                        name: 1,
+                        parent: 1,
+                        company: 1,
+                        scope: 1,
+                        type: 1,
+                        assignedUser: 1,
+                        assignedUserDoc: {
+                          _id: "$assignedUserDoc._id",
+                          name: "$assignedUserDoc.name",
+                          email: "$assignedUserDoc.email",
+                        },
+                        subsubcategories: 1,
+                        sortIndex: 1,
+                      },
+                    },
                   ],
                   as: "subcategories",
                 },
@@ -449,9 +479,16 @@ export class CategoryService {
           const prevSubcategory = await SubcategoryModel.findById(subcategoryIdMongo);
           if (!prevSubcategory) throw CustomError.notFound('Subcategory not found');
 
+          const update: Record<string, any> = { name: updateSubcategoryDto.name };
+          if (updateSubcategoryDto.assignedUser) {
+              update.assignedUser = Validators.convertToUid(updateSubcategoryDto.assignedUser);
+          } else {
+              update.$unset = { assignedUser: "" };
+          }
+
           const updatedSubcategory = await SubcategoryModel.findByIdAndUpdate(
               subcategoryIdMongo,
-              { ...updateSubcategoryDto},
+              update,
               { new: true }
           );
 
