@@ -11,7 +11,9 @@ export class GraphicsRoutes {
 
     router.use(AuthMiddleware.validateJWT);
     router.get("/expense-budget-tree/:idCompany", controller.getExpenseBudgetTreeByMonth);
+    router.get("/income-budget-tree/:idCompany", controller.getIncomeBudgetTreeByMonth);
 
     return router;
   }
 }
+

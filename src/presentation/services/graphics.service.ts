@@ -54,6 +54,53 @@ export class GraphicsService {
     }
   }
 
+  async getIncomeBudgetTreeByMonth(userId: string, idCompany: string) {
+    if (!Validators.isMongoID(idCompany)) {
+      throw CustomError.badRequest("Invalid company ID");
+    }
+
+    const uid = Validators.convertToUid(userId);
+    const companyId = Validators.convertToUid(idCompany);
+
+    try {
+      const [membershipCompany] = await MembershipModel.aggregate([
+        {
+          $match: {
+            user: uid,
+            company: companyId,
+          },
+        },
+        {
+          $lookup: {
+            from: "companies",
+            localField: "company",
+            foreignField: "_id",
+            as: "companyDoc",
+          },
+        },
+        { $unwind: "$companyDoc" },
+        {
+          $project: {
+            _id: "$companyDoc._id",
+            name: "$companyDoc.name",
+          },
+        },
+      ]);
+
+      if (!membershipCompany) {
+        throw CustomError.forbidden("You do not have access to this company");
+      }
+
+      return await this.buildIncomeTreeForCompany(membershipCompany);
+    } catch (error) {
+      console.log(error);
+      if (error instanceof CustomError) {
+        throw error;
+      }
+      throw CustomError.internalServer("Internal Server Error");
+    }
+  }
+
   private async buildExpenseTreeForCompany(company: Record<string, any>) {
     const companyId = company._id;
 
@@ -312,6 +359,298 @@ export class GraphicsService {
     }
 
     const categories = expenseTree.map((category: Record<string, any>) =>
+      this.buildCategoryNode(category, fiscalMonths, budgetMap, spentMap)
+    );
+
+    const summaryByMonth = fiscalMonths.map((month, index) => {
+      let budget = 0;
+      let spent = 0;
+
+      for (const category of categories) {
+        budget += Number(category.byMonth[index]?.budget ?? 0);
+        spent += Number(category.byMonth[index]?.spent ?? 0);
+      }
+
+      return {
+        ...month,
+        budget,
+        spent,
+        remaining: budget - spent,
+      };
+    });
+
+    return {
+      ...company,
+      fiscalYear: {
+        _id: fyLink.fiscalYear._id,
+        name: fyLink.fiscalYear.name,
+        startDate: fyLink.fiscalYear.startDate,
+        endDate: fyLink.fiscalYear.endDate ?? fyLink.fyEnd,
+      },
+      months: fiscalMonths,
+      summaryByMonth,
+      categories,
+    };
+  }
+
+  private async buildIncomeTreeForCompany(company: Record<string, any>) {
+    const companyId = company._id;
+
+    const [fyLink] = await FiscalYear_CompanyModel.aggregate([
+      { $match: { company: companyId } },
+      {
+        $lookup: {
+          from: "fiscalyears",
+          localField: "fiscalYear",
+          foreignField: "_id",
+          as: "fy",
+        },
+      },
+      { $addFields: { fy: { $arrayElemAt: ["$fy", 0] } } },
+      {
+        $addFields: {
+          fyEnd: {
+            $ifNull: [
+              "$fy.endDate",
+              {
+                $dateAdd: {
+                  startDate: "$fy.startDate",
+                  unit: "month",
+                  amount: 12,
+                },
+              },
+            ],
+          },
+        },
+      },
+      {
+        $match: {
+          $expr: {
+            $and: [
+              { $lte: ["$fy.startDate", "$$NOW"] },
+              { $gt: ["$fyEnd", "$$NOW"] },
+            ],
+          },
+        },
+      },
+      { $sort: { "fy.startDate": -1 } },
+      { $limit: 1 },
+      {
+        $project: {
+          _id: 0,
+          fiscalYear: "$fy",
+          fyEnd: 1,
+        },
+      },
+    ]);
+
+    if (!fyLink?.fiscalYear?.startDate) {
+      return {
+        ...company,
+        fiscalYear: null,
+        months: [],
+        summaryByMonth: [],
+        categories: [],
+      };
+    }
+
+    const fyStart = new Date(fyLink.fiscalYear.startDate);
+    const fyEnd = new Date(fyLink.fyEnd);
+    const fiscalMonths = this.buildFiscalMonths(fyStart, fyEnd);
+    if (fiscalMonths.length === 0) {
+      return {
+        ...company,
+        fiscalYear: {
+          _id: fyLink.fiscalYear._id,
+          name: fyLink.fiscalYear.name,
+          startDate: fyLink.fiscalYear.startDate,
+          endDate: fyLink.fiscalYear.endDate ?? fyLink.fyEnd,
+        },
+        months: [],
+        summaryByMonth: [],
+        categories: [],
+      };
+    }
+
+    const accountDocs = await AccountModel.find({ company: companyId }, { _id: 1 }).lean();
+    const accountIds = accountDocs.map((a: Record<string, any>) => a._id);
+
+    const incomeTree = await CategoryModel.aggregate([
+      { $match: { company: companyId, type: "INCOME" } },
+      { $sort: { sortIndex: 1, name: 1 } },
+      {
+        $lookup: {
+          from: "subcategories",
+          let: { categoryId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$parent", "$$categoryId"] },
+              },
+            },
+            { $sort: { sortIndex: 1, name: 1 } },
+            {
+              $lookup: {
+                from: "subsubcategories",
+                let: { subcategoryId: "$_id" },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: { $eq: ["$parent", "$$subcategoryId"] },
+                    },
+                  },
+                  { $sort: { sortIndex: 1, name: 1 } },
+                  { $project: { _id: 1, name: 1, sortIndex: 1 } },
+                ],
+                as: "subsubcategories",
+              },
+            },
+            { $project: { _id: 1, name: 1, sortIndex: 1, subsubcategories: 1 } },
+          ],
+          as: "subcategories",
+        },
+      },
+      { $project: { _id: 1, name: 1, sortIndex: 1, subcategories: 1 } },
+    ]);
+
+    const validMonthOr = fiscalMonths.map((m) => ({ year: m.year, month: m.month }));
+
+    const budgetRows =
+      validMonthOr.length === 0
+        ? []
+        : await BudgetModel.aggregate([
+            {
+              $match: {
+                company: companyId,
+                $or: validMonthOr,
+              },
+            },
+            {
+              $lookup: {
+                from: "subsubcategories",
+                localField: "subsubcategory",
+                foreignField: "_id",
+                as: "subsub",
+              },
+            },
+            { $addFields: { subsub: { $arrayElemAt: ["$subsub", 0] } } },
+            {
+              $lookup: {
+                from: "subcategories",
+                localField: "subsub.parent",
+                foreignField: "_id",
+                as: "subcat",
+              },
+            },
+            { $addFields: { subcat: { $arrayElemAt: ["$subcat", 0] } } },
+            {
+              $lookup: {
+                from: "categories",
+                localField: "subcat.parent",
+                foreignField: "_id",
+                as: "cat",
+              },
+            },
+            { $addFields: { cat: { $arrayElemAt: ["$cat", 0] } } },
+            {
+              $match: {
+                "cat.type": "INCOME",
+              },
+            },
+            {
+              $group: {
+                _id: {
+                  subsubcategory: "$subsubcategory",
+                  year: "$year",
+                  month: "$month",
+                },
+                budget: { $sum: "$amount" },
+              },
+            },
+            {
+              $project: {
+                _id: 0,
+                subsubcategory: "$_id.subsubcategory",
+                year: "$_id.year",
+                month: "$_id.month",
+                budget: { $toDouble: { $ifNull: ["$budget", 0] } },
+              },
+            },
+          ]);
+
+    const movementRows = await MovementModel.aggregate([
+      {
+        $match: {
+          account: { $in: accountIds },
+          source: { $ne: "TRANSFER" },
+          occurredAt: { $gte: fyStart, $lt: fyEnd },
+          amount: { $gt: 0 },
+        },
+      },
+      {
+        $lookup: {
+          from: "subsubcategories",
+          localField: "subsubcategory",
+          foreignField: "_id",
+          as: "subsub",
+        },
+      },
+      { $addFields: { subsub: { $arrayElemAt: ["$subsub", 0] } } },
+      {
+        $lookup: {
+          from: "subcategories",
+          localField: "subsub.parent",
+          foreignField: "_id",
+          as: "subcat",
+        },
+      },
+      { $addFields: { subcat: { $arrayElemAt: ["$subcat", 0] } } },
+      {
+        $lookup: {
+          from: "categories",
+          localField: "subcat.parent",
+          foreignField: "_id",
+          as: "cat",
+        },
+      },
+      { $addFields: { cat: { $arrayElemAt: ["$cat", 0] } } },
+      {
+        $match: {
+          "cat.type": "INCOME",
+        },
+      },
+      {
+        $group: {
+          _id: {
+            subsubcategory: "$subsubcategory",
+            year: { $year: "$occurredAt" },
+            month: { $month: "$occurredAt" },
+          },
+          spent: { $sum: "$amount" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          subsubcategory: "$_id.subsubcategory",
+          year: "$_id.year",
+          month: "$_id.month",
+          spent: { $toDouble: { $ifNull: ["$spent", 0] } },
+        },
+      },
+    ]);
+
+    const budgetMap = new Map<string, number>();
+    for (const row of budgetRows) {
+      budgetMap.set(this.subsubMonthKey(row.subsubcategory, row.year, row.month), Number(row.budget) || 0);
+    }
+
+    const spentMap = new Map<string, number>();
+    for (const row of movementRows) {
+      spentMap.set(this.subsubMonthKey(row.subsubcategory, row.year, row.month), Number(row.spent) || 0);
+    }
+
+    const categories = incomeTree.map((category: Record<string, any>) =>
       this.buildCategoryNode(category, fiscalMonths, budgetMap, spentMap)
     );
 

@@ -20,6 +20,20 @@ export class GraphicsController {
       .then((overview) => res.json(overview))
       .catch((error) => this.handleError(error, res));
   };
+
+  getIncomeBudgetTreeByMonth = async (req: Request, res: Response) => {
+    const user = (req as any).user;
+    if (!user?.id) {
+      return sendUnauthorizedError(res, "User not authenticated");
+    }
+    const { idCompany } = req.params;
+
+    await this.graphicsService
+      .getIncomeBudgetTreeByMonth(user.id, idCompany)
+      .then((overview) => res.json(overview))
+      .catch((error) => this.handleError(error, res));
+  };
 }
+
 
 
