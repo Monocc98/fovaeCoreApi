@@ -35,9 +35,10 @@ export class MovementController {
 
   getMovementsByAccountId = async (req: Request, res: Response) => {
     const idAccount = req.params.idAccount;
+    const fiscalYearId = typeof req.query.fiscalYearId === "string" ? req.query.fiscalYearId : undefined;
 
     this.movementService
-      .getMovementsByAccountId(idAccount)
+      .getMovementsByAccountId(idAccount, fiscalYearId)
       .then((movements) => res.json(movements))
       .catch((error) => this.handleError(error, res));
   };

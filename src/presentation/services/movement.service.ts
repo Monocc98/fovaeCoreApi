@@ -335,7 +335,7 @@ export class MovementService {
     }
   }
 
-  async getMovementsByAccountId(idAccount: string) {
+  async getMovementsByAccountId(idAccount: string, fiscalYearId?: string) {
     try {
       if (!Validators.isMongoID(idAccount))
         throw CustomError.badRequest("Invalid account ID");
@@ -376,12 +376,14 @@ export class MovementService {
         },
         {
           $match: {
-            $expr: {
-              $and: [
-                { $lte: ["$fy.startDate", now] },
-                { $gt: ["$fyEnd", now] },
-              ],
-            },
+            $expr: fiscalYearId
+              ? { $eq: ["$fy._id", Validators.convertToUid(fiscalYearId)] }
+              : {
+                  $and: [
+                    { $lte: ["$fy.startDate", now] },
+                    { $gt: ["$fyEnd", now] },
+                  ],
+                },
           },
         },
         { $sort: { "fy.startDate": -1 } },

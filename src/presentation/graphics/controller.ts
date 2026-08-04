@@ -14,9 +14,10 @@ export class GraphicsController {
       return sendUnauthorizedError(res, "User not authenticated");
     }
     const { idCompany } = req.params;
+    const fiscalYearId = typeof req.query.fiscalYearId === "string" ? req.query.fiscalYearId : undefined;
 
     await this.graphicsService
-      .getExpenseBudgetTreeByMonth(user.id, idCompany)
+      .getExpenseBudgetTreeByMonth(user.id, idCompany, fiscalYearId)
       .then((overview) => res.json(overview))
       .catch((error) => this.handleError(error, res));
   };
@@ -27,9 +28,10 @@ export class GraphicsController {
       return sendUnauthorizedError(res, "User not authenticated");
     }
     const { idCompany } = req.params;
+    const fiscalYearId = typeof req.query.fiscalYearId === "string" ? req.query.fiscalYearId : undefined;
 
     await this.graphicsService
-      .getIncomeBudgetTreeByMonth(user.id, idCompany)
+      .getIncomeBudgetTreeByMonth(user.id, idCompany, fiscalYearId)
       .then((overview) => res.json(overview))
       .catch((error) => this.handleError(error, res));
   };

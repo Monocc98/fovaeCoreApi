@@ -7,7 +7,7 @@ import { CustomError } from "../../domain";
 export class GraphicsService {
   constructor() {}
 
-  async getExpenseBudgetTreeByMonth(userId: string, idCompany: string) {
+  async getExpenseBudgetTreeByMonth(userId: string, idCompany: string, fiscalYearId?: string) {
     if (!Validators.isMongoID(idCompany)) {
       throw CustomError.badRequest("Invalid company ID");
     }
@@ -44,7 +44,7 @@ export class GraphicsService {
         throw CustomError.forbidden("You do not have access to this company");
       }
 
-      return await this.buildExpenseTreeForCompany(membershipCompany);
+      return await this.buildExpenseTreeForCompany(membershipCompany, fiscalYearId);
     } catch (error) {
       console.log(error);
       if (error instanceof CustomError) {
@@ -54,7 +54,7 @@ export class GraphicsService {
     }
   }
 
-  async getIncomeBudgetTreeByMonth(userId: string, idCompany: string) {
+  async getIncomeBudgetTreeByMonth(userId: string, idCompany: string, fiscalYearId?: string) {
     if (!Validators.isMongoID(idCompany)) {
       throw CustomError.badRequest("Invalid company ID");
     }
@@ -91,7 +91,7 @@ export class GraphicsService {
         throw CustomError.forbidden("You do not have access to this company");
       }
 
-      return await this.buildIncomeTreeForCompany(membershipCompany);
+      return await this.buildIncomeTreeForCompany(membershipCompany, fiscalYearId);
     } catch (error) {
       console.log(error);
       if (error instanceof CustomError) {
@@ -101,7 +101,7 @@ export class GraphicsService {
     }
   }
 
-  private async buildExpenseTreeForCompany(company: Record<string, any>) {
+  private async buildExpenseTreeForCompany(company: Record<string, any>, fiscalYearId?: string) {
     const companyId = company._id;
 
     const [fyLink] = await FiscalYear_CompanyModel.aggregate([
@@ -133,12 +133,14 @@ export class GraphicsService {
       },
       {
         $match: {
-          $expr: {
-            $and: [
-              { $lte: ["$fy.startDate", "$$NOW"] },
-              { $gt: ["$fyEnd", "$$NOW"] },
-            ],
-          },
+          $expr: fiscalYearId
+            ? { $eq: ["$fy._id", Validators.convertToUid(fiscalYearId)] }
+            : {
+                $and: [
+                  { $lte: ["$fy.startDate", "$$NOW"] },
+                  { $gt: ["$fyEnd", "$$NOW"] },
+                ],
+              },
         },
       },
       { $sort: { "fy.startDate": -1 } },
@@ -393,7 +395,7 @@ export class GraphicsService {
     };
   }
 
-  private async buildIncomeTreeForCompany(company: Record<string, any>) {
+  private async buildIncomeTreeForCompany(company: Record<string, any>, fiscalYearId?: string) {
     const companyId = company._id;
 
     const [fyLink] = await FiscalYear_CompanyModel.aggregate([
@@ -425,12 +427,14 @@ export class GraphicsService {
       },
       {
         $match: {
-          $expr: {
-            $and: [
-              { $lte: ["$fy.startDate", "$$NOW"] },
-              { $gt: ["$fyEnd", "$$NOW"] },
-            ],
-          },
+          $expr: fiscalYearId
+            ? { $eq: ["$fy._id", Validators.convertToUid(fiscalYearId)] }
+            : {
+                $and: [
+                  { $lte: ["$fy.startDate", "$$NOW"] },
+                  { $gt: ["$fyEnd", "$$NOW"] },
+                ],
+              },
         },
       },
       { $sort: { "fy.startDate": -1 } },

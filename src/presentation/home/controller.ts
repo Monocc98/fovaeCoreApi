@@ -16,13 +16,13 @@ export class HomeController {
 
     getHomeOverview = async(req: Request, res: Response) => {
 
-        
         const user = (req as any).user;
         if (!user?.id) {
             return sendUnauthorizedError(res, "User not authenticated");
         }
+        const fiscalYearId = typeof req.query.fiscalYearId === "string" ? req.query.fiscalYearId : undefined;
 
-        await this.homeService.getHomeOverview(user.id)
+        await this.homeService.getHomeOverview(user.id, fiscalYearId)
             .then ( overview => res.json( overview ))
             .catch( error => this.handleError( error, res ) );
         
@@ -34,8 +34,9 @@ export class HomeController {
         if (!user?.id) {
             return sendUnauthorizedError(res, "User not authenticated");
         }
+        const fiscalYearId = typeof req.query.fiscalYearId === "string" ? req.query.fiscalYearId : undefined;
 
-        await this.homeService.getCompanyBudgetVsActual(user.id)
+        await this.homeService.getCompanyBudgetVsActual(user.id, fiscalYearId)
             .then ( overview => res.json( overview ))
             .catch( error => this.handleError( error, res ) );
         
@@ -47,8 +48,9 @@ export class HomeController {
         if (!user?.id) {
             return sendUnauthorizedError(res, "User not authenticated");
         }
+        const fiscalYearId = typeof req.query.fiscalYearId === "string" ? req.query.fiscalYearId : undefined;
 
-        await this.homeService.getHomeBucketsSummary(user.id)
+        await this.homeService.getHomeBucketsSummary(user.id, fiscalYearId)
             .then ( overview => res.json( overview ))
             .catch( error => this.handleError( error, res ) );
         
@@ -60,8 +62,9 @@ export class HomeController {
         if (!user?.id) {
             return sendUnauthorizedError(res, "User not authenticated");
         }
+        const fiscalYearId = typeof req.query.fiscalYearId === "string" ? req.query.fiscalYearId : undefined;
 
-        await this.homeService.getUnmappedBucketMovements(user.id)
+        await this.homeService.getUnmappedBucketMovements(user.id, fiscalYearId)
             .then ( overview => res.json( overview ))
             .catch( error => this.handleError( error, res ) );
         
@@ -76,8 +79,9 @@ export class HomeController {
 
         const groupId = req.params.groupId;
         const requestedUserId = typeof req.query.userId === "string" ? req.query.userId : undefined;
+        const fiscalYearId = typeof req.query.fiscalYearId === "string" ? req.query.fiscalYearId : undefined;
 
-        await this.homeService.getGroupDividends(user.id, user.role, groupId, requestedUserId)
+        await this.homeService.getGroupDividends(user.id, user.role, groupId, requestedUserId, fiscalYearId)
             .then ( overview => res.json( overview ))
             .catch( error => this.handleError( error, res ) );
         

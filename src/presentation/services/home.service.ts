@@ -172,13 +172,13 @@ export class HomeService {
     return `${value?._id ?? value?.id ?? value ?? ""}`;
   }
 
-  private async getActiveFiscalYear(companyId: any) {
+  private async getActiveFiscalYear(companyId: any, fiscalYearId?: string) {
     const now = new Date();
     const links = await FiscalYear_CompanyModel.find({ company: companyId })
       .populate("fiscalYear")
       .lean();
 
-    const active = links
+    const mapped = links
       .map((link: any) => {
         const fy = link.fiscalYear;
         if (!fy?.startDate) return null;
@@ -195,7 +195,14 @@ export class HomeService {
           endDate,
         };
       })
-      .filter((fy): fy is { _id: any; name: string; startDate: Date; endDate: Date } => Boolean(fy))
+      .filter((fy): fy is { _id: any; name: string; startDate: Date; endDate: Date } => Boolean(fy));
+
+    if (fiscalYearId) {
+      const found = mapped.find(fy => String(fy._id) === fiscalYearId);
+      if (found) return found;
+    }
+
+    const active = mapped
       .filter((fy) => fy.startDate <= now && fy.endDate > now)
       .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())[0];
 
@@ -211,7 +218,7 @@ export class HomeService {
     ];
   }
 
-  async getHomeOverview(userId: string) {
+  async getHomeOverview(userId: string, fiscalYearId?: string) {
   const uid = Validators.convertToUid(userId);
 
   try {
@@ -277,15 +284,17 @@ export class HomeService {
               },
             },
 
-            // ✅ solo el FY que contiene "hoy"
+            // ✅ solo el FY que contiene "hoy" o el seleccionado
             {
               $match: {
-                $expr: {
-                  $and: [
-                    { $lte: ["$fy.startDate", "$$now"] },
-                    { $gt: ["$fyEnd", "$$now"] },
-                  ],
-                },
+                $expr: fiscalYearId
+                  ? { $eq: ["$fy._id", Validators.convertToUid(fiscalYearId)] }
+                  : {
+                      $and: [
+                        { $lte: ["$fy.startDate", "$$now"] },
+                        { $gt: ["$fyEnd", "$$now"] },
+                      ],
+                    },
               },
             },
 
@@ -878,7 +887,7 @@ export class HomeService {
 }
 
 
-  async getCompanyBudgetVsActual(userId: string) {
+  async getCompanyBudgetVsActual(userId: string, fiscalYearId?: string) {
     const uid = Validators.convertToUid(userId);
 
     try {
@@ -957,15 +966,17 @@ export class HomeService {
                 },
               },
 
-              // ✅ solo el FY que contiene "hoy"
+              // ✅ solo el FY que contiene "hoy" o el seleccionado
               {
                 $match: {
-                  $expr: {
-                    $and: [
-                      { $lte: ["$fy.startDate", "$$now"] },
-                      { $gt: ["$fyEnd", "$$now"] },
-                    ],
-                  },
+                  $expr: fiscalYearId
+                    ? { $eq: ["$fy._id", Validators.convertToUid(fiscalYearId)] }
+                    : {
+                        $and: [
+                          { $lte: ["$fy.startDate", "$$now"] },
+                          { $gt: ["$fyEnd", "$$now"] },
+                        ],
+                      },
                 },
               },
 
@@ -1495,7 +1506,7 @@ export class HomeService {
    * - Se resuelve: movement.subsubcategory -> subsub -> subcat -> cat -> cat.bucket
    * - Se arma summary por company y luego por group
    */
-  async getHomeBucketsSummary(userId: string) {
+  async getHomeBucketsSummary(userId: string, fiscalYearId?: string) {
     const uid = Validators.convertToUid(userId);
 
     try {
@@ -1572,14 +1583,17 @@ export class HomeService {
                 },
               },
 
+              // ✅ solo el FY que contiene "hoy" o el seleccionado
               {
                 $match: {
-                  $expr: {
-                    $and: [
-                      { $lte: ["$fy.startDate", "$$now"] },
-                      { $gt: ["$fyEnd", "$$now"] },
-                    ],
-                  },
+                  $expr: fiscalYearId
+                    ? { $eq: ["$fy._id", Validators.convertToUid(fiscalYearId)] }
+                    : {
+                        $and: [
+                          { $lte: ["$fy.startDate", "$$now"] },
+                          { $gt: ["$fyEnd", "$$now"] },
+                        ],
+                      },
                 },
               },
 
@@ -2133,7 +2147,8 @@ export class HomeService {
     userId: string,
     userRole: string,
     groupId: string,
-    requestedUserId?: string
+    requestedUserId?: string,
+    fiscalYearId?: string
   ) {
     if (!Validators.isMongoID(groupId)) {
       throw CustomError.badRequest("Invalid group ID");
@@ -2212,7 +2227,7 @@ export class HomeService {
         .select("_id")
         .lean();
       const accountIds: any[] = accountDocs.map((account: any) => account._id);
-      const fiscalYear = await this.getActiveFiscalYear(company._id);
+      const fiscalYear = await this.getActiveFiscalYear(company._id, fiscalYearId);
       const dateConditions = this.buildDateConditions(fiscalYear);
 
       const [utilityDoc] = await MovementModel.aggregate([
@@ -2396,8 +2411,8 @@ export class HomeService {
     };
   }
 
-  async getUnmappedBucketMovements(userId: string) {
-    const overview = await this.getHomeBucketsSummary(userId);
+  async getUnmappedBucketMovements(userId: string, fiscalYearId?: string) {
+    const overview = await this.getHomeBucketsSummary(userId, fiscalYearId);
     const movements: any[] = [];
     const reasonCounts = new Map<string, number>();
 
