@@ -1,5 +1,6 @@
 import { Validators } from "../../config";
 import { FiscalYear_CompanyModel } from "../../data/mongo/models/fiscalYear_Company.model";
+import { CompanyModel } from "../../data/mongo/models/company.model";
 import { CustomError } from "../../domain";
 import { CreateFiscalYear_CompanyDto } from "../../domain/dtos/fiscalYear/membership.dto";
 
@@ -32,9 +33,19 @@ export class FiscalYear_CompanyService {
     }
   }
 
-  async getFiscalYears_Companies() {
+  async getFiscalYears_Companies(groupId?: string) {
     try {
-      const fiscalYear_Companys = await FiscalYear_CompanyModel.find()
+      const query: any = {};
+      if (groupId) {
+        if (!Validators.isMongoID(groupId))
+          throw CustomError.badRequest("Invalid group ID");
+        const groupObjectId = Validators.convertToUid(groupId);
+        const companies = await CompanyModel.find({ group: groupObjectId }, { _id: 1 }) as any[];
+        const companyIds = companies.map((c) => c._id);
+        query.company = { $in: companyIds };
+      }
+
+      const fiscalYear_Companys = await FiscalYear_CompanyModel.find(query)
         .populate("company")
         .populate("fiscalYear");
 

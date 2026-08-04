@@ -27,8 +27,9 @@ export class FiscalYear_CompanyController {
     }
 
     getFiscalYears_Companies = async(req: Request, res: Response) => {
+        const groupId = typeof req.query.groupId === "string" ? req.query.groupId : undefined;
 
-        this.fiscalYear_CompanyService.getFiscalYears_Companies()
+        this.fiscalYear_CompanyService.getFiscalYears_Companies(groupId)
             .then ( fiscalYear_Company => res.json( fiscalYear_Company ))
             .catch( error => this.handleError( error, res ) );
         
