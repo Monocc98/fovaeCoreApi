@@ -33,19 +33,9 @@ export class FiscalYear_CompanyService {
     }
   }
 
-  async getFiscalYears_Companies(groupId?: string) {
+  async getFiscalYears_Companies() {
     try {
-      const query: any = {};
-      if (groupId) {
-        if (!Validators.isMongoID(groupId))
-          throw CustomError.badRequest("Invalid group ID");
-        const groupObjectId = Validators.convertToUid(groupId);
-        const companies = await CompanyModel.find({ group: groupObjectId }, { _id: 1 }) as any[];
-        const companyIds = companies.map((c) => c._id);
-        query.company = { $in: companyIds };
-      }
-
-      const fiscalYear_Companys = await FiscalYear_CompanyModel.find(query)
+      const fiscalYear_Companys = await FiscalYear_CompanyModel.find()
         .populate("company")
         .populate("fiscalYear");
 
