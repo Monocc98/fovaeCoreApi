@@ -185,7 +185,7 @@ export class HomeService {
 
         const startDate = new Date(fy.startDate);
         const endDate = fy.endDate
-          ? new Date(fy.endDate)
+          ? new Date(new Date(fy.endDate).getTime() + 24 * 60 * 60 * 1000)
           : new Date(startDate.getFullYear() + 1, startDate.getMonth(), startDate.getDate());
 
         return {
@@ -206,7 +206,10 @@ export class HomeService {
       .filter((fy) => fy.startDate <= now && fy.endDate > now)
       .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())[0];
 
-    return active ?? null;
+    if (active) return active;
+
+    const latest = mapped.sort((a, b) => b.startDate.getTime() - a.startDate.getTime())[0];
+    return latest ?? null;
   }
 
   private buildDateConditions(fiscalYear: Awaited<ReturnType<HomeService["getActiveFiscalYear"]>>) {
@@ -266,10 +269,10 @@ export class HomeService {
             },
             { $addFields: { fy: { $arrayElemAt: ["$fy", 0] } } },
 
-            // fyEnd fallback = start + 12 meses
+            // fyEnd fallback = start + 12 meses, extendido al final del día
             {
               $addFields: {
-                fyEnd: {
+                rawFyEnd: {
                   $ifNull: [
                     "$fy.endDate",
                     {
@@ -283,22 +286,46 @@ export class HomeService {
                 },
               },
             },
+            {
+              $addFields: {
+                fyEnd: {
+                  $cond: [
+                    { $ne: ["$fy.endDate", null] },
+                    {
+                      $dateAdd: {
+                        startDate: "$rawFyEnd",
+                        unit: "day",
+                        amount: 1,
+                      },
+                    },
+                    "$rawFyEnd",
+                  ],
+                },
+                isCurrent: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $lte: ["$fy.startDate", "$$now"] },
+                        { $gt: ["$rawFyEnd", "$$now"] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            },
 
-            // ✅ solo el FY que contiene "hoy" o el seleccionado
+            // ✅ FY seleccionado o todos para ordenar por actualidad/reciente
             {
               $match: {
                 $expr: fiscalYearId
                   ? { $eq: ["$fy._id", Validators.convertToUid(fiscalYearId)] }
-                  : {
-                      $and: [
-                        { $lte: ["$fy.startDate", "$$now"] },
-                        { $gt: ["$fyEnd", "$$now"] },
-                      ],
-                    },
+                  : { $ne: ["$fy._id", null] },
               },
             },
 
-            { $sort: { "fy.startDate": -1 } },
+            { $sort: { isCurrent: -1, "fy.startDate": -1 } },
             { $limit: 1 },
 
             {
@@ -948,10 +975,10 @@ export class HomeService {
               },
               { $addFields: { fy: { $arrayElemAt: ["$fy", 0] } } },
 
-              // fyEnd fallback = start + 12 meses
+              // fyEnd fallback = start + 12 meses, extendido al final del día
               {
                 $addFields: {
-                  fyEnd: {
+                  rawFyEnd: {
                     $ifNull: [
                       "$fy.endDate",
                       {
@@ -965,22 +992,46 @@ export class HomeService {
                   },
                 },
               },
+              {
+                $addFields: {
+                  fyEnd: {
+                    $cond: [
+                      { $ne: ["$fy.endDate", null] },
+                      {
+                        $dateAdd: {
+                          startDate: "$rawFyEnd",
+                          unit: "day",
+                          amount: 1,
+                        },
+                      },
+                      "$rawFyEnd",
+                    ],
+                  },
+                  isCurrent: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $lte: ["$fy.startDate", "$$now"] },
+                          { $gt: ["$rawFyEnd", "$$now"] },
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+              },
 
-              // ✅ solo el FY que contiene "hoy" o el seleccionado
+              // ✅ FY seleccionado o todos para ordenar por actualidad/reciente
               {
                 $match: {
                   $expr: fiscalYearId
                     ? { $eq: ["$fy._id", Validators.convertToUid(fiscalYearId)] }
-                    : {
-                        $and: [
-                          { $lte: ["$fy.startDate", "$$now"] },
-                          { $gt: ["$fyEnd", "$$now"] },
-                        ],
-                      },
+                    : { $ne: ["$fy._id", null] },
                 },
               },
 
-              { $sort: { "fy.startDate": -1 } },
+              { $sort: { isCurrent: -1, "fy.startDate": -1 } },
               { $limit: 1 },
 
               {
@@ -1566,9 +1617,10 @@ export class HomeService {
               },
               { $addFields: { fy: { $arrayElemAt: ["$fy", 0] } } },
 
+              // fyEnd fallback = start + 12 meses, extendido al final del día
               {
                 $addFields: {
-                  fyEnd: {
+                  rawFyEnd: {
                     $ifNull: [
                       "$fy.endDate",
                       {
@@ -1582,22 +1634,46 @@ export class HomeService {
                   },
                 },
               },
+              {
+                $addFields: {
+                  fyEnd: {
+                    $cond: [
+                      { $ne: ["$fy.endDate", null] },
+                      {
+                        $dateAdd: {
+                          startDate: "$rawFyEnd",
+                          unit: "day",
+                          amount: 1,
+                        },
+                      },
+                      "$rawFyEnd",
+                    ],
+                  },
+                  isCurrent: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $lte: ["$fy.startDate", "$$now"] },
+                          { $gt: ["$rawFyEnd", "$$now"] },
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+              },
 
-              // ✅ solo el FY que contiene "hoy" o el seleccionado
+              // ✅ FY seleccionado o todos para ordenar por actualidad/reciente
               {
                 $match: {
                   $expr: fiscalYearId
                     ? { $eq: ["$fy._id", Validators.convertToUid(fiscalYearId)] }
-                    : {
-                        $and: [
-                          { $lte: ["$fy.startDate", "$$now"] },
-                          { $gt: ["$fyEnd", "$$now"] },
-                        ],
-                      },
+                    : { $ne: ["$fy._id", null] },
                 },
               },
 
-              { $sort: { "fy.startDate": -1 } },
+              { $sort: { isCurrent: -1, "fy.startDate": -1 } },
               { $limit: 1 },
 
               {

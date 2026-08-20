@@ -360,7 +360,7 @@ export class MovementService {
         { $addFields: { fy: { $arrayElemAt: ["$fy", 0] } } },
         {
           $addFields: {
-            fyEnd: {
+            rawFyEnd: {
               $ifNull: [
                 "$fy.endDate",
                 {
@@ -375,18 +375,42 @@ export class MovementService {
           },
         },
         {
+          $addFields: {
+            fyEnd: {
+              $cond: [
+                { $ne: ["$fy.endDate", null] },
+                {
+                  $dateAdd: {
+                    startDate: "$rawFyEnd",
+                    unit: "day",
+                    amount: 1,
+                  },
+                },
+                "$rawFyEnd",
+              ],
+            },
+            isCurrent: {
+              $cond: [
+                {
+                  $and: [
+                    { $lte: ["$fy.startDate", now] },
+                    { $gt: ["$rawFyEnd", now] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+        {
           $match: {
             $expr: fiscalYearId
               ? { $eq: ["$fy._id", Validators.convertToUid(fiscalYearId)] }
-              : {
-                  $and: [
-                    { $lte: ["$fy.startDate", now] },
-                    { $gt: ["$fyEnd", now] },
-                  ],
-                },
+              : { $ne: ["$fy._id", null] },
           },
         },
-        { $sort: { "fy.startDate": -1 } },
+        { $sort: { isCurrent: -1, "fy.startDate": -1 } },
         { $limit: 1 },
         {
           $project: {
