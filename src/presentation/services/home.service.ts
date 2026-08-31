@@ -273,14 +273,21 @@ export class HomeService {
             {
               $addFields: {
                 rawFyEnd: {
-                  $ifNull: [
+                  $cond: [
+                    { $ne: ["$fy.endDate", null] },
                     "$fy.endDate",
                     {
-                      $dateAdd: {
-                        startDate: "$fy.startDate",
-                        unit: "month",
-                        amount: 12,
-                      },
+                      $cond: [
+                        { $ne: ["$fy.startDate", null] },
+                        {
+                          $dateAdd: {
+                            startDate: "$fy.startDate",
+                            unit: "month",
+                            amount: 12,
+                          },
+                        },
+                        null,
+                      ],
                     },
                   ],
                 },
@@ -290,7 +297,12 @@ export class HomeService {
               $addFields: {
                 fyEnd: {
                   $cond: [
-                    { $ne: ["$fy.endDate", null] },
+                    {
+                      $and: [
+                        { $ne: ["$rawFyEnd", null] },
+                        { $ne: ["$fy.endDate", null] },
+                      ],
+                    },
                     {
                       $dateAdd: {
                         startDate: "$rawFyEnd",
@@ -305,6 +317,8 @@ export class HomeService {
                   $cond: [
                     {
                       $and: [
+                        { $ne: ["$fy.startDate", null] },
+                        { $ne: ["$rawFyEnd", null] },
                         { $lte: ["$fy.startDate", "$$now"] },
                         { $gt: ["$rawFyEnd", "$$now"] },
                       ],
@@ -979,14 +993,21 @@ export class HomeService {
               {
                 $addFields: {
                   rawFyEnd: {
-                    $ifNull: [
+                    $cond: [
+                      { $ne: ["$fy.endDate", null] },
                       "$fy.endDate",
                       {
-                        $dateAdd: {
-                          startDate: "$fy.startDate",
-                          unit: "month",
-                          amount: 12,
-                        },
+                        $cond: [
+                          { $ne: ["$fy.startDate", null] },
+                          {
+                            $dateAdd: {
+                              startDate: "$fy.startDate",
+                              unit: "month",
+                              amount: 12,
+                            },
+                          },
+                          null,
+                        ],
                       },
                     ],
                   },
@@ -996,7 +1017,12 @@ export class HomeService {
                 $addFields: {
                   fyEnd: {
                     $cond: [
-                      { $ne: ["$fy.endDate", null] },
+                      {
+                        $and: [
+                          { $ne: ["$rawFyEnd", null] },
+                          { $ne: ["$fy.endDate", null] },
+                        ],
+                      },
                       {
                         $dateAdd: {
                           startDate: "$rawFyEnd",
@@ -1011,6 +1037,8 @@ export class HomeService {
                     $cond: [
                       {
                         $and: [
+                          { $ne: ["$fy.startDate", null] },
+                          { $ne: ["$rawFyEnd", null] },
                           { $lte: ["$fy.startDate", "$$now"] },
                           { $gt: ["$rawFyEnd", "$$now"] },
                         ],
@@ -1621,14 +1649,21 @@ export class HomeService {
               {
                 $addFields: {
                   rawFyEnd: {
-                    $ifNull: [
+                    $cond: [
+                      { $ne: ["$fy.endDate", null] },
                       "$fy.endDate",
                       {
-                        $dateAdd: {
-                          startDate: "$fy.startDate",
-                          unit: "month",
-                          amount: 12,
-                        },
+                        $cond: [
+                          { $ne: ["$fy.startDate", null] },
+                          {
+                            $dateAdd: {
+                              startDate: "$fy.startDate",
+                              unit: "month",
+                              amount: 12,
+                            },
+                          },
+                          null,
+                        ],
                       },
                     ],
                   },
@@ -1638,7 +1673,12 @@ export class HomeService {
                 $addFields: {
                   fyEnd: {
                     $cond: [
-                      { $ne: ["$fy.endDate", null] },
+                      {
+                        $and: [
+                          { $ne: ["$rawFyEnd", null] },
+                          { $ne: ["$fy.endDate", null] },
+                        ],
+                      },
                       {
                         $dateAdd: {
                           startDate: "$rawFyEnd",
@@ -1653,6 +1693,8 @@ export class HomeService {
                     $cond: [
                       {
                         $and: [
+                          { $ne: ["$fy.startDate", null] },
+                          { $ne: ["$rawFyEnd", null] },
                           { $lte: ["$fy.startDate", "$$now"] },
                           { $gt: ["$rawFyEnd", "$$now"] },
                         ],

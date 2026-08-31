@@ -256,6 +256,37 @@ export class MovementService {
         { new: true }
       );
 
+      // Si el movimiento proviene de una importación con externalConceptKey, actualizar/aprender la regla
+      if (
+        prevMovement.account &&
+        prevMovement.externalConceptKey &&
+        updateMovementDto.subsubcategory
+      ) {
+        const targetSubsubId = updateMovementDto.subsubcategory;
+        const existingRule = await ConceptRuleModel.findOne({
+          account: prevMovement.account,
+          externalConceptKey: prevMovement.externalConceptKey,
+        });
+
+        if (!existingRule) {
+          await ConceptRuleModel.create({
+            account: prevMovement.account,
+            externalConceptKey: prevMovement.externalConceptKey,
+            subsubcategory: targetSubsubId,
+            timesConfirmed: 1,
+            timesCorrected: 1,
+            locked: false,
+            lastUsedAt: new Date(),
+          });
+        } else if (String(existingRule.subsubcategory) !== String(targetSubsubId)) {
+          existingRule.subsubcategory = targetSubsubId as any;
+          existingRule.timesCorrected = (existingRule.timesCorrected || 0) + 1;
+          existingRule.timesConfirmed = 1;
+          existingRule.lastUsedAt = new Date();
+          await existingRule.save();
+        }
+      }
+
       return { movement: updatedMovement };
     } catch (error) {
       throw CustomError.internalServer(`${error}`);
@@ -361,14 +392,21 @@ export class MovementService {
         {
           $addFields: {
             rawFyEnd: {
-              $ifNull: [
+              $cond: [
+                { $ne: ["$fy.endDate", null] },
                 "$fy.endDate",
                 {
-                  $dateAdd: {
-                    startDate: "$fy.startDate",
-                    unit: "month",
-                    amount: 12,
-                  },
+                  $cond: [
+                    { $ne: ["$fy.startDate", null] },
+                    {
+                      $dateAdd: {
+                        startDate: "$fy.startDate",
+                        unit: "month",
+                        amount: 12,
+                      },
+                    },
+                    null,
+                  ],
                 },
               ],
             },
@@ -378,7 +416,12 @@ export class MovementService {
           $addFields: {
             fyEnd: {
               $cond: [
-                { $ne: ["$fy.endDate", null] },
+                {
+                  $and: [
+                    { $ne: ["$rawFyEnd", null] },
+                    { $ne: ["$fy.endDate", null] },
+                  ],
+                },
                 {
                   $dateAdd: {
                     startDate: "$rawFyEnd",
@@ -393,6 +436,8 @@ export class MovementService {
               $cond: [
                 {
                   $and: [
+                    { $ne: ["$fy.startDate", null] },
+                    { $ne: ["$rawFyEnd", null] },
                     { $lte: ["$fy.startDate", now] },
                     { $gt: ["$rawFyEnd", now] },
                   ],
