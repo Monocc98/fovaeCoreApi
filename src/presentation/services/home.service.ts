@@ -921,9 +921,9 @@ export class HomeService {
     ]);
 
     return overview ?? { user: null, groups: [] };
-  } catch (error) {
-    console.log(error);
-    throw CustomError.internalServer("Internal Server Error");
+  } catch (error: any) {
+    console.error("GET HOME OVERVIEW ERROR:", error);
+    throw CustomError.internalServer(error?.message || "Internal Server Error");
   }
 }
 
@@ -1572,9 +1572,9 @@ export class HomeService {
       ]);
 
       return overview ?? { user: null, groups: [] };
-    } catch (error) {
-      console.log(error);
-      throw CustomError.internalServer("Internal Server Error");
+    } catch (error: any) {
+      console.error("GET COMPANY BUDGET VS ACTUAL ERROR:", error);
+      throw CustomError.internalServer(error?.message || "Internal Server Error");
     }
   }
 
@@ -2255,9 +2255,9 @@ export class HomeService {
       ]);
 
       return overview ?? { user: null, groups: [] };
-    } catch (error) {
-      console.log(error);
-      throw CustomError.internalServer("Internal Server Error");
+    } catch (error: any) {
+      console.error("GET HOME BUCKETS SUMMARY ERROR:", error);
+      throw CustomError.internalServer(error?.message || "Internal Server Error");
     }
   }
 
