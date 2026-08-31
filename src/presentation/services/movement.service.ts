@@ -392,19 +392,12 @@ export class MovementService {
         {
           $addFields: {
             rawFyEnd: {
-              $cond: [
-                { $ne: ["$fy.endDate", null] },
+              $ifNull: [
                 "$fy.endDate",
                 {
                   $cond: [
                     { $ne: ["$fy.startDate", null] },
-                    {
-                      $dateAdd: {
-                        startDate: "$fy.startDate",
-                        unit: "month",
-                        amount: 12,
-                      },
-                    },
+                    { $add: ["$fy.startDate", 31536000000] },
                     null,
                   ],
                 },
@@ -416,19 +409,8 @@ export class MovementService {
           $addFields: {
             fyEnd: {
               $cond: [
-                {
-                  $and: [
-                    { $ne: ["$rawFyEnd", null] },
-                    { $ne: ["$fy.endDate", null] },
-                  ],
-                },
-                {
-                  $dateAdd: {
-                    startDate: "$rawFyEnd",
-                    unit: "day",
-                    amount: 1,
-                  },
-                },
+                { $ne: ["$rawFyEnd", null] },
+                { $add: ["$rawFyEnd", 86400000] },
                 "$rawFyEnd",
               ],
             },
