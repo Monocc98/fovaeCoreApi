@@ -269,40 +269,35 @@ export class HomeService {
             },
             { $addFields: { fy: { $arrayElemAt: ["$fy", 0] } } },
 
-            // fyEnd fallback = start + 12 meses (365d en ms), extendido al final del día (+1d en ms)
+            // Conversión segura de fechas de FiscalYear a Date
             {
               $addFields: {
-                rawFyEnd: {
-                  $ifNull: [
-                    "$fy.endDate",
-                    {
-                      $cond: [
-                        { $ne: ["$fy.startDate", null] },
-                        { $add: ["$fy.startDate", 31536000000] },
-                        null,
-                      ],
-                    },
+                fyStart: {
+                  $cond: [
+                    { $ne: ["$fy.startDate", null] },
+                    { $toDate: "$fy.startDate" },
+                    null,
+                  ],
+                },
+                fyEnd: {
+                  $cond: [
+                    { $ne: ["$fy.endDate", null] },
+                    { $toDate: "$fy.endDate" },
+                    null,
                   ],
                 },
               },
             },
             {
               $addFields: {
-                fyEnd: {
-                  $cond: [
-                    { $ne: ["$rawFyEnd", null] },
-                    { $add: ["$rawFyEnd", 86400000] },
-                    "$rawFyEnd",
-                  ],
-                },
                 isCurrent: {
                   $cond: [
                     {
                       $and: [
-                        { $ne: ["$fy.startDate", null] },
-                        { $ne: ["$rawFyEnd", null] },
-                        { $lte: ["$fy.startDate", "$$now"] },
-                        { $gt: ["$rawFyEnd", "$$now"] },
+                        { $ne: ["$fyStart", null] },
+                        { $ne: ["$fyEnd", null] },
+                        { $lte: ["$fyStart", "$$now"] },
+                        { $gte: ["$fyEnd", "$$now"] },
                       ],
                     },
                     1,
@@ -321,13 +316,14 @@ export class HomeService {
               },
             },
 
-            { $sort: { isCurrent: -1, "fy.startDate": -1 } },
+            { $sort: { isCurrent: -1, fyStart: -1 } },
             { $limit: 1 },
 
             {
               $project: {
                 _id: 1,
                 fiscalYear: "$fy",
+                fyStart: 1,
                 fyEnd: 1,
               },
             },
@@ -341,7 +337,7 @@ export class HomeService {
       {
         $addFields: {
           fy: "$fyLink.fiscalYear",
-          fyStart: "$fyLink.fiscalYear.startDate",
+          fyStart: "$fyLink.fyStart",
           fyEnd: "$fyLink.fyEnd",
         },
       },
@@ -971,40 +967,35 @@ export class HomeService {
               },
               { $addFields: { fy: { $arrayElemAt: ["$fy", 0] } } },
 
-              // fyEnd fallback = start + 12 meses (365d en ms), extendido al final del día (+1d en ms)
+              // Conversión segura de fechas de FiscalYear a Date
               {
                 $addFields: {
-                  rawFyEnd: {
-                    $ifNull: [
-                      "$fy.endDate",
-                      {
-                        $cond: [
-                          { $ne: ["$fy.startDate", null] },
-                          { $add: ["$fy.startDate", 31536000000] },
-                          null,
-                        ],
-                      },
+                  fyStart: {
+                    $cond: [
+                      { $ne: ["$fy.startDate", null] },
+                      { $toDate: "$fy.startDate" },
+                      null,
+                    ],
+                  },
+                  fyEnd: {
+                    $cond: [
+                      { $ne: ["$fy.endDate", null] },
+                      { $toDate: "$fy.endDate" },
+                      null,
                     ],
                   },
                 },
               },
               {
                 $addFields: {
-                  fyEnd: {
-                    $cond: [
-                      { $ne: ["$rawFyEnd", null] },
-                      { $add: ["$rawFyEnd", 86400000] },
-                      "$rawFyEnd",
-                    ],
-                  },
                   isCurrent: {
                     $cond: [
                       {
                         $and: [
-                          { $ne: ["$fy.startDate", null] },
-                          { $ne: ["$rawFyEnd", null] },
-                          { $lte: ["$fy.startDate", "$$now"] },
-                          { $gt: ["$rawFyEnd", "$$now"] },
+                          { $ne: ["$fyStart", null] },
+                          { $ne: ["$fyEnd", null] },
+                          { $lte: ["$fyStart", "$$now"] },
+                          { $gte: ["$fyEnd", "$$now"] },
                         ],
                       },
                       1,
@@ -1023,7 +1014,7 @@ export class HomeService {
                 },
               },
 
-              { $sort: { isCurrent: -1, "fy.startDate": -1 } },
+              { $sort: { isCurrent: -1, fyStart: -1 } },
               { $limit: 1 },
 
               {
@@ -1031,6 +1022,7 @@ export class HomeService {
                   _id: 1,
                   budgetLocked: 1,
                   fiscalYear: "$fy",
+                  fyStart: 1,
                   fyEnd: 1,
                 },
               },
@@ -1044,10 +1036,22 @@ export class HomeService {
         {
           $addFields: {
             fy: "$fyLink.fiscalYear",
-            fyStart: "$fyLink.fiscalYear.startDate",
+            fyStart: "$fyLink.fyStart",
             fyEnd: "$fyLink.fyEnd",
-            startMonth: { $month: "$fyLink.fiscalYear.startDate" },
-            startYear: { $year: "$fyLink.fiscalYear.startDate" },
+            startMonth: {
+              $cond: [
+                { $ne: ["$fyLink.fyStart", null] },
+                { $month: "$fyLink.fyStart" },
+                null,
+              ],
+            },
+            startYear: {
+              $cond: [
+                { $ne: ["$fyLink.fyStart", null] },
+                { $year: "$fyLink.fyStart" },
+                null,
+              ],
+            },
             budgetLocked: { $ifNull: ["$fyLink.budgetLocked", false] },
             fyId: "$fyLink.fiscalYear._id",
           },
@@ -1609,40 +1613,35 @@ export class HomeService {
               },
               { $addFields: { fy: { $arrayElemAt: ["$fy", 0] } } },
 
-              // fyEnd fallback = start + 12 meses (365d en ms), extendido al final del día (+1d en ms)
+              // Conversión segura de fechas de FiscalYear a Date
               {
                 $addFields: {
-                  rawFyEnd: {
-                    $ifNull: [
-                      "$fy.endDate",
-                      {
-                        $cond: [
-                          { $ne: ["$fy.startDate", null] },
-                          { $add: ["$fy.startDate", 31536000000] },
-                          null,
-                        ],
-                      },
+                  fyStart: {
+                    $cond: [
+                      { $ne: ["$fy.startDate", null] },
+                      { $toDate: "$fy.startDate" },
+                      null,
+                    ],
+                  },
+                  fyEnd: {
+                    $cond: [
+                      { $ne: ["$fy.endDate", null] },
+                      { $toDate: "$fy.endDate" },
+                      null,
                     ],
                   },
                 },
               },
               {
                 $addFields: {
-                  fyEnd: {
-                    $cond: [
-                      { $ne: ["$rawFyEnd", null] },
-                      { $add: ["$rawFyEnd", 86400000] },
-                      "$rawFyEnd",
-                    ],
-                  },
                   isCurrent: {
                     $cond: [
                       {
                         $and: [
-                          { $ne: ["$fy.startDate", null] },
-                          { $ne: ["$rawFyEnd", null] },
-                          { $lte: ["$fy.startDate", "$$now"] },
-                          { $gt: ["$rawFyEnd", "$$now"] },
+                          { $ne: ["$fyStart", null] },
+                          { $ne: ["$fyEnd", null] },
+                          { $lte: ["$fyStart", "$$now"] },
+                          { $gte: ["$fyEnd", "$$now"] },
                         ],
                       },
                       1,
@@ -1661,13 +1660,14 @@ export class HomeService {
                 },
               },
 
-              { $sort: { isCurrent: -1, "fy.startDate": -1 } },
+              { $sort: { isCurrent: -1, fyStart: -1 } },
               { $limit: 1 },
 
               {
                 $project: {
                   _id: 1,
                   fiscalYear: "$fy",
+                  fyStart: 1,
                   fyEnd: 1,
                 },
               },
@@ -1679,7 +1679,7 @@ export class HomeService {
         {
           $addFields: {
             fy: "$fyLink.fiscalYear",
-            fyStart: "$fyLink.fiscalYear.startDate",
+            fyStart: "$fyLink.fyStart",
             fyEnd: "$fyLink.fyEnd",
           },
         },

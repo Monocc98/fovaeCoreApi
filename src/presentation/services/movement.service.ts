@@ -391,37 +391,32 @@ export class MovementService {
         { $addFields: { fy: { $arrayElemAt: ["$fy", 0] } } },
         {
           $addFields: {
-            rawFyEnd: {
-              $ifNull: [
-                "$fy.endDate",
-                {
-                  $cond: [
-                    { $ne: ["$fy.startDate", null] },
-                    { $add: ["$fy.startDate", 31536000000] },
-                    null,
-                  ],
-                },
+            fyStart: {
+              $cond: [
+                { $ne: ["$fy.startDate", null] },
+                { $toDate: "$fy.startDate" },
+                null,
+              ],
+            },
+            fyEnd: {
+              $cond: [
+                { $ne: ["$fy.endDate", null] },
+                { $toDate: "$fy.endDate" },
+                null,
               ],
             },
           },
         },
         {
           $addFields: {
-            fyEnd: {
-              $cond: [
-                { $ne: ["$rawFyEnd", null] },
-                { $add: ["$rawFyEnd", 86400000] },
-                "$rawFyEnd",
-              ],
-            },
             isCurrent: {
               $cond: [
                 {
                   $and: [
-                    { $ne: ["$fy.startDate", null] },
-                    { $ne: ["$rawFyEnd", null] },
-                    { $lte: ["$fy.startDate", now] },
-                    { $gt: ["$rawFyEnd", now] },
+                    { $ne: ["$fyStart", null] },
+                    { $ne: ["$fyEnd", null] },
+                    { $lte: ["$fyStart", now] },
+                    { $gte: ["$fyEnd", now] },
                   ],
                 },
                 1,
@@ -437,12 +432,12 @@ export class MovementService {
               : { $ne: ["$fy._id", null] },
           },
         },
-        { $sort: { isCurrent: -1, "fy.startDate": -1 } },
+        { $sort: { isCurrent: -1, fyStart: -1 } },
         { $limit: 1 },
         {
           $project: {
             _id: 0,
-            fyStart: "$fy.startDate",
+            fyStart: 1,
             fyEnd: 1,
           },
         },
